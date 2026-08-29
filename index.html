@@ -1,0 +1,2585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ArUco 五子棋 · 摄像头增强现实棋盘</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#283041; --fg:#e6edf3; --dim:#8b949e;
+    --acc:#4c9aff; --acc2:#f0b429; --ok:#3fb950; --bad:#f85149;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{display:flex;height:100%;gap:0}
+  #stageWrap{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:16px;position:relative}
+  #stage{position:relative;width:100%;max-height:100%;aspect-ratio:4/3;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation;cursor:crosshair}
+  #hint{
+    position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+    background:rgba(0,0,0,.62);border:1px solid var(--line);color:var(--fg);
+    padding:6px 12px;border-radius:999px;font-size:12px;white-space:nowrap;pointer-events:none;
+    backdrop-filter:blur(6px);
+  }
+  #panel{
+    width:310px;flex:none;background:var(--panel);border-left:1px solid var(--line);
+    padding:18px;overflow:auto;display:flex;flex-direction:column;gap:16px
+  }
+  h1{font-size:15px;margin:0;letter-spacing:.5px}
+  h1 small{display:block;color:var(--dim);font-weight:400;font-size:11px;letter-spacing:0;margin-top:3px}
+  .grp{border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px}
+  .grp:first-of-type{border-top:none;padding-top:0}
+  .lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{
+    background:#21262d;color:var(--fg);border:1px solid var(--line);border-radius:7px;
+    padding:8px 12px;font-size:13px;cursor:pointer;font-family:inherit;transition:.14s
+  }
+  button:hover{background:#2d333b;border-color:#3d4657}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#06121f;font-weight:600}
+  button.primary:hover{background:#63a9ff}
+  button.on{background:var(--ok);border-color:var(--ok);color:#04140a;font-weight:600}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  select,input[type=number]{
+    background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:7px;
+    padding:7px 8px;font-size:13px;font-family:inherit;max-width:100%
+  }
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .turn{display:flex;align-items:center;gap:10px;font-size:14px}
+  .dot{width:22px;height:22px;border-radius:50%;flex:none;box-shadow:inset 0 -2px 4px rgba(0,0,0,.4)}
+  .dot.b{background:radial-gradient(circle at 35% 30%,#5a5a5a,#0a0a0a)}
+  .dot.w{background:radial-gradient(circle at 35% 30%,#fff,#b9b9b9)}
+  .stat{font-size:12px;color:var(--dim);display:flex;justify-content:space-between;gap:8px}
+  .stat b{color:var(--fg);font-weight:600}
+  .tag{font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--line);color:var(--dim)}
+  .tag.ok{color:var(--ok);border-color:#1d472a}
+  .tag.bad{color:var(--bad);border-color:#4a2020}
+  details{font-size:12px;color:var(--dim)}
+  details summary{cursor:pointer;color:var(--fg);font-size:13px;padding:4px 0}
+  details p{margin:6px 0}
+  code{background:#0d1117;padding:1px 5px;border-radius:4px;color:var(--acc2);font-size:11px}
+  @media(max-width:820px){
+    #app{flex-direction:column}
+    #panel{width:100%;border-left:none;border-top:1px solid var(--line);max-height:47%}
+    #stageWrap{padding:8px}
+  }
+  @media print{ body>#app{display:none} }
+  /* 演示/投影模式：只留棋盘 */
+  body.present #panel{display:none}
+  body.present #stageWrap{padding:0}
+  body.present #stage{border-radius:0;box-shadow:none;max-height:100vh}
+  body.present #hint{display:none}
+  body.hidevid #video{visibility:hidden}
+  /* 纯投影输出窗口：只留棋盘 */
+  body.projview #panel{display:none}
+  body.projview #stageWrap{padding:0}
+  body.projview #stage{border-radius:0;box-shadow:none;max-height:100vh;background:#000}
+  body.projview #hint,body.projview #exitPresent{display:none}
+  body.projview #video,body.projview #remoteView{display:none}
+  #remoteView{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+              background:#000;display:none}
+  body.viewremote #remoteView{display:block}
+  body.viewremote #video{visibility:hidden}
+  #exitPresent{
+    position:fixed;right:10px;top:10px;z-index:9;display:none;opacity:.18;transition:opacity .2s;
+    background:rgba(0,0,0,.55);border:1px solid var(--line);color:var(--dim);
+    border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer
+  }
+  body.present #exitPresent{display:block}
+  #exitPresent:hover{opacity:1}
+  /* 打印页 */
+  #sheet{display:none}
+  @media print{
+    #sheet{display:block;position:fixed;inset:0;background:#fff}
+    @page{margin:8mm}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stageWrap">
+    <div id="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+      <img id="remoteView" alt="">
+      <div id="hint">点击「开启摄像头」，然后用「调整框选」把四角对准棋盘</div>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <h1>ArUco 五子棋
+      <small>摄像头识别四角标记 · 棋盘投影在纸面上</small>
+    </h1>
+
+    <div class="grp">
+      <div class="row">
+        <button id="btnStart" class="primary">开启摄像头</button>
+        <button id="btnFlat">平面模式</button>
+      </div>
+      <select id="camSel" style="width:100%"></select>
+      <div class="row">
+        <span style="font-size:12px;color:var(--dim)">默认索引</span>
+        <input type="number" id="camIdx" min="0" max="15" value="2" style="width:60px">
+        <button id="btnRescan">重新扫描</button>
+      </div>
+      <div class="stat"><span>当前设备</span><span id="tagCam" class="tag">—</span></div>
+      <div class="stat"><span>分辨率</span><span><b id="tagRes">—</b></span></div>
+      <div class="row">
+        <span style="font-size:12px;color:var(--dim)">识别分辨率</span>
+        <select id="selProc">
+          <option value="640">640（省电）</option>
+          <option value="800">800</option>
+          <option value="960" selected>960（推荐）</option>
+          <option value="1280">1280</option>
+          <option value="1600">1600（大角度/远距离）</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="btnRetry" class="on">大角度自动重试</button>
+      </div>
+      <div class="stat"><span>标记识别</span><span id="tagDet" class="tag">未开始</span></div>
+      <div class="stat"><span>处理帧率</span><span><b id="tagFps">0</b> fps</span></div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">对局</div>
+      <div class="row">
+        <span style="font-size:12px;color:var(--dim)">我方座位</span>
+        <select id="selSeat">
+          <option value="black">执黑（先手）</option>
+          <option value="white">执白（后手）</option>
+          <option value="solo">单机双方</option>
+        </select>
+      </div>
+      <div class="turn"><span id="turnDot" class="dot b"></span><span id="turnTxt">黑棋回合</span></div>
+      <div class="row">
+        <button id="btnUndo">悔棋</button>
+        <button id="btnReset">重新开始</button>
+        <button id="btnLock">锁定棋盘</button>
+      </div>
+      <div class="stat"><span>手数</span><span><b id="tagMoves">0</b></span></div>
+      <div class="stat"><span>对端</span><span id="tagPeer" class="tag">未连接</span></div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">实体棋子识别</div>
+      <div class="row">
+        <button id="btnScreenGrid" class="on">按屏幕网格识别</button>
+        <button id="btnAbsMode" class="on">免基准识别</button>
+      </div>
+      <div class="lbl" style="margin-top:2px">（关掉上面才需要：手动标定四角）</div>
+      <div class="row">
+        <button id="btnCalib" class="primary">标定四角</button>
+        <button id="btnCalFromRoi">用 ROI 填入</button>
+        <button id="btnCalibReset">重置四角</button>
+      </div>
+      <div class="row">
+        <button class="calcorner on" data-k="0">左上</button>
+        <button class="calcorner" data-k="1">右上</button>
+        <button class="calcorner" data-k="2">右下</button>
+        <button class="calcorner" data-k="3">左下</button>
+      </div>
+      <div class="row">
+        <button id="btnCalRot">旋转 90°</button>
+        <button id="btnCalFlip">左右镜像</button>
+      </div>
+      <div class="stat"><span>标定状态</span><span id="tagCalib" class="tag bad">未标定</span></div>
+      <div class="stat"><span>最近识别到</span><span id="tagLastDet" class="tag">—</span></div>
+      <div class="stat"><span>未入账原因</span><span id="tagPend" class="tag">—</span></div>
+      <div class="stat"><span>识别异常</span><span id="tagErr" class="tag">—</span></div>
+      <div class="stat"><span>变化点数</span><span id="tagDiff" class="tag">—</span></div>
+      <div class="lbl" style="margin-top:6px">第二步：清空棋盘后取基准</div>
+      <div class="row">
+        <button id="btnCal" class="primary">校准空盘 (C)</button>
+        <button id="btnStones" class="on">识别开</button>
+      </div>
+      <div class="stat"><span>空盘基准</span><span id="tagCal" class="tag bad">未校准</span></div>
+      <div class="stat"><span>桌面实体子</span><span><b id="tagPhys">0</b> 颗</span></div>
+      <div>
+        <div class="stat"><span>黑子阈值</span><span><b id="thVal">24</b> 灰阶</span></div>
+        <input type="range" id="rngTh" min="6" max="70" step="1" value="24">
+      </div>
+      <div>
+        <div class="stat"><span>白子阈值</span><span><b id="thWVal">14</b> 灰阶</span></div>
+        <input type="range" id="rngThW" min="4" max="60" step="1" value="14">
+      </div>
+      <div class="row">
+        <button id="btnPending" class="on">显示待判定圈</button>
+      </div>
+      <div class="row">
+        <button id="btnAutoUndo" class="on">拿走棋子=悔棋</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">数字云台</div>
+      <div class="row">
+        <button id="btnProj" class="primary">投影模式</button>
+        <button id="btnHideOwn" class="on">本方子只画环</button>
+      </div>
+      <div class="row">
+        <a id="lnkProj" target="_blank" rel="noopener"
+           style="display:inline-block;background:#21262d;color:var(--fg);
+                  border:1px solid var(--line);border-radius:7px;padding:8px 12px;
+                  font-size:13px;text-decoration:none">↗ 打开投影窗口</a>
+      </div>
+      <div class="row">
+        <button id="btnPresent">全屏演示 (F)</button>
+        <button id="btnHideVid">隐藏视频 (V)</button>
+      </div>
+      <div class="row">
+        <button id="btnGimbal">开启云台</button>
+        <button id="btnRot">视角 0°</button>
+      </div>
+      <div>
+        <div class="stat"><span>裁切边距</span><span><b id="mgVal">0.70</b> 格</span></div>
+        <input type="range" id="rngMg" min="0" max="2" step="0.05" value="0.7">
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">ROI 直播（概念演示）</div>
+      <div class="row">
+        <button id="btnRoi">开启 ROI</button>
+        <button id="btnRoiEdit">调整框选</button>
+        <button id="btnRoiRect">重置为矩形</button>
+      </div>
+      <div class="row">
+        <button class="roicorner on" data-k="0">左上</button>
+        <button class="roicorner" data-k="1">右上</button>
+        <button class="roicorner" data-k="2">右下</button>
+        <button class="roicorner" data-k="3">左下</button>
+      </div>
+      <div class="row">
+        <button id="btnViewRemote">看远端画面</button>
+        <button id="btnRoiFill" class="on">ROI 铺满</button>
+      </div>
+      <div class="row">
+        <button id="btnZoomOut">− 缩小</button>
+        <button id="btnZoomIn">放大 +</button>
+        <button id="btnZoomReset">重置</button>
+      </div>
+      <div>
+        <div class="stat"><span>画面放大</span><span><b id="zoomVal">100</b>%</span></div>
+        <input type="range" id="rngZoom" min="50" max="400" step="5" value="100">
+      </div>
+      <div class="stat"><span>画面平移</span><span style="color:var(--dim)">方向键</span></div>
+      <div class="lbl" style="margin-top:6px">梯形校正（投影畸变）</div>
+      <div class="row">
+        <button id="btnKs">开启校正</button>
+        <button id="btnKsReset">重置四角</button>
+      </div>
+      <div class="row">
+        <button class="kscorner on" data-k="0">左上</button>
+        <button class="kscorner" data-k="1">右上</button>
+        <button class="kscorner" data-k="2">右下</button>
+        <button class="kscorner" data-k="3">左下</button>
+      </div>
+      <div class="row">
+        <button id="ksL">←</button><button id="ksR">→</button>
+        <button id="ksU">↑</button><button id="ksD">↓</button>
+        <span style="font-size:11px;color:var(--dim)">选中角后也可用方向键</span>
+      </div>
+      <div class="row">
+        <button id="btnFixed" class="on">固定棋盘</button>
+        <button id="btnMask" class="on">棋盘外遮黑</button>
+      </div>
+      <div>
+        <div class="stat"><span>遮罩留边</span><span><b id="padVal">0.35</b> 格</span></div>
+        <input type="range" id="rngPad" min="0" max="3" step="0.05" value="0.35">
+      </div>
+      <div>
+        <div class="stat"><span>棋盘大小</span><span><b id="fixVal">95</b>%</span></div>
+        <input type="range" id="rngFixed" min="30" max="200" step="1" value="95">
+      </div>
+      <div>
+        <div class="stat"><span>发送帧率</span><span><b id="roiFpsVal">10</b> fps</span></div>
+        <input type="range" id="rngRoiFps" min="2" max="20" step="1" value="10">
+      </div>
+      <div>
+        <div class="stat"><span>画质</span><span><b id="roiQVal">60</b>%</span></div>
+        <input type="range" id="rngRoiQ" min="20" max="90" step="5" value="60">
+      </div>
+      <div class="stat"><span>上行</span><span><b id="tagUp">0</b> KB/s</span></div>
+      <div class="stat"><span>远端</span><span id="tagRemote" class="tag">无信号</span></div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">棋盘参数</div>
+      <div class="row">
+        <span style="font-size:12px">路数</span>
+        <select id="selN">
+          <option value="13">13 × 13</option>
+          <option value="15" selected>15 × 15</option>
+          <option value="19">19 × 19</option>
+        </select>
+      </div>
+      <div>
+        <div class="stat"><span>标记外扩 offset</span><span><b id="offVal">1.20</b> 格</span></div>
+        <input type="range" id="rngOff" min="0" max="3" step="0.05" value="1.2">
+      </div>
+      <div>
+        <div class="stat"><span>棋盘线不透明度</span><span><b id="opaVal">85</b>%</span></div>
+        <input type="range" id="rngOpa" min="20" max="100" step="1" value="85">
+      </div>
+      <div class="row">
+        <button id="btnLine">线条：深色</button>
+        <button id="btnDebug">识别调试</button>
+        <button id="btnPrint">打印标记纸</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <details>
+        <summary>使用说明</summary>
+        <p><b>两台电脑，各带一个摄像头 + 一台投影仪</b></p>
+        <p>1. 一台跑服务：<code>node server.js</code>。本机开 <code>http://localhost:8778/?seat=black</code>。</p>
+        <p>2. 另一台连同一局域网，开 <code>https://本机IP:8443/?seat=white</code>。自签证书会报警告，点「高级 → 继续前往」，绕过后摄像头仍可用（非 localhost 必须走 HTTPS 才允许开摄像头）。</p>
+        <p>3. 两端各选自己的摄像头，对准自己那张标记纸，等「4 / 4 已识别」。</p>
+        <p>4. <b>先清空棋盘</b>，按「校准空盘 (C)」记录基准。之后你往桌上放一颗实体棋子，程序识别到就自动记为你的一手并发给对方。</p>
+        <p>5. 对方的棋子在你这边是<b>虚拟</b>画出来的，连同棋盘格一起投到你的桌面上；你自己的实体棋子不会被重复画。</p>
+        <p>6. 投影时按 <b>F</b> 全屏、<b>V</b> 隐藏视频，再把「线条」切成亮色——黑底亮线，打在实体棋子上的光最少。</p>
+        <p><b>棋盘对位</b></p>
+        <p>四角 ArUco 标记全部入镜即可。<code>offset</code> 是标记中心相对棋盘最外一条线向外扩出的格数，你那张图上是 <code>offset=1.2</code>，保持默认。两端的路数和 offset 必须一致。</p>
+        <p>摆好机位后按「锁定棋盘」，之后手挡住标记也不会漂移。</p>
+        <p>识别不依赖具体字典：任何 4×4 黑边方形标记都能用，靠四个标记的<b>相对位置</b>判断左上/右上/右下/左下。</p>
+      </details>
+    </div>
+  </aside>
+</div>
+
+<button id="exitPresent">退出演示 (F)</button>
+<div id="sheet"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   1) 线性代数：单应矩阵
+   ============================================================ */
+function gauss(A, b, n){
+  for(let i=0;i<n;i++){
+    let p=i;
+    for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[p][i])) p=r;
+    if(Math.abs(A[p][i])<1e-12) return null;
+    if(p!==i){const t=A[p];A[p]=A[i];A[i]=t;const tb=b[p];b[p]=b[i];b[i]=tb;}
+    const piv=A[i][i];
+    for(let r=i+1;r<n;r++){
+      const f=A[r][i]/piv; if(!f) continue;
+      for(let c=i;c<n;c++) A[r][c]-=f*A[i][c];
+      b[r]-=f*b[i];
+    }
+  }
+  const x=new Float64Array(n);
+  for(let i=n-1;i>=0;i--){
+    let s=b[i];
+    for(let c=i+1;c<n;c++) s-=A[i][c]*x[c];
+    x[i]=s/A[i][i];
+  }
+  return x;
+}
+/** src/dst: [[x,y]x4]  返回 [h0..h7]（h8=1） */
+function homography(src,dst){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const [x,y]=src[i],[u,v]=dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]); b.push(u);
+    A.push([0,0,0,x,y,1,-v*x,-v*y]); b.push(v);
+  }
+  const h=gauss(A,b,8);
+  return h?[h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7]]:null;
+}
+function applyH(h,x,y){
+  const w=h[6]*x+h[7]*y+1;
+  return [(h[0]*x+h[1]*y+h[2])/w,(h[3]*x+h[4]*y+h[5])/w];
+}
+function hMul(A,B){          // 两个单应相乘：先 B 后 A
+  const a=[A[0],A[1],A[2],A[3],A[4],A[5],A[6],A[7],1];
+  const b=[B[0],B[1],B[2],B[3],B[4],B[5],B[6],B[7],1];
+  const c=new Array(9);
+  for(let r=0;r<3;r++) for(let k=0;k<3;k++)
+    c[r*3+k]=a[r*3]*b[k]+a[r*3+1]*b[3+k]+a[r*3+2]*b[6+k];
+  if(Math.abs(c[8])<1e-12) return null;
+  const s=1/c[8];
+  return [c[0]*s,c[1]*s,c[2]*s,c[3]*s,c[4]*s,c[5]*s,c[6]*s,c[7]*s];
+}
+function invH(h){
+  const a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],i=h[7],j=1;
+  const A=e*j-f*i, B=-(d*j-f*g), C=d*i-e*g;
+  const det=a*A+b*B+c*C;
+  if(Math.abs(det)<1e-12) return null;
+  const id=1/det;
+  const m=[ A*id, -(b*j-c*i)*id, (b*f-c*e)*id,
+            B*id,  (a*j-c*g)*id, -(a*f-c*d)*id,
+            C*id, -(a*i-b*g)*id, (a*e-b*d)*id ];
+  // 归一化到 m[8]=1
+  const s=1/m[8];
+  return [m[0]*s,m[1]*s,m[2]*s,m[3]*s,m[4]*s,m[5]*s,m[6]*s,m[7]*s];
+}
+
+/* ============================================================
+   2) 纯 JS ArUco 检测器（自适应二值化 → 连通域 → 凸包 → 四角 → 反投影解码）
+   ============================================================ */
+const Det = (()=>{
+  let W=0,H=0, gray=null, bin=null, integ=null, labels=null, stack=null;
+
+  function alloc(w,h){
+    if(W===w&&H===h) return;
+    W=w;H=h;
+    gray=new Uint8Array(w*h);
+    bin=new Uint8Array(w*h);
+    integ=new Int32Array((w+1)*(h+1));
+    labels=new Int32Array(w*h);
+    stack=new Int32Array(w*h);
+  }
+
+  function toGray(data){
+    for(let i=0,p=0;i<gray.length;i++,p+=4)
+      gray[i]=(data[p]*77+data[p+1]*151+data[p+2]*28)>>8;
+  }
+
+  function adaptive(radius,C){
+    const w=W,h=H,iw=w+1;
+    for(let x=0;x<=w;x++) integ[x]=0;
+    for(let y=0;y<h;y++){
+      let row=0;
+      const o=(y+1)*iw, o0=y*iw, g=y*w;
+      integ[o]=0;
+      for(let x=0;x<w;x++){ row+=gray[g+x]; integ[o+x+1]=integ[o0+x+1]+row; }
+    }
+    for(let y=0;y<h;y++){
+      const y0=Math.max(0,y-radius), y1=Math.min(h-1,y+radius);
+      const a=y0*iw, b=(y1+1)*iw, g=y*w;
+      for(let x=0;x<w;x++){
+        const x0=Math.max(0,x-radius), x1=Math.min(w-1,x+radius);
+        const n=(x1-x0+1)*(y1-y0+1);
+        const sum=integ[b+x1+1]-integ[b+x0]-integ[a+x1+1]+integ[a+x0];
+        bin[g+x]= (gray[g+x]*n < sum - C*n) ? 1 : 0;
+      }
+    }
+  }
+
+  function hullOf(pts){
+    if(pts.length<3) return pts;
+    pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+    const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+    const lo=[];
+    for(const p of pts){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+    const up=[];
+    for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p);}
+    lo.pop(); up.pop();
+    return lo.concat(up);
+  }
+  function polyArea(p){
+    let s=0;
+    for(let i=0,n=p.length;i<n;i++){const q=p[(i+1)%n]; s+=p[i][0]*q[1]-q[0]*p[i][1];}
+    return Math.abs(s)/2;
+  }
+  function dist2(a,b){const dx=a[0]-b[0],dy=a[1]-b[1];return dx*dx+dy*dy;}
+  function orderCCW(q){
+    const cx=(q[0][0]+q[1][0]+q[2][0]+q[3][0])/4, cy=(q[0][1]+q[1][1]+q[2][1]+q[3][1])/4;
+    return q.slice().sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx));
+  }
+  /** 凸包 → 四个角：取内接面积最大的四边形（对强透视梯形也稳） */
+  function quadFromHull(hull){
+    let Hh=hull;
+    if(Hh.length>32){ const st=Hh.length/32, t=[]; for(let k=0;k<32;k++) t.push(Hh[Math.floor(k*st)]); Hh=t; }
+    const n=Hh.length; if(n<4) return null;
+    let best=0,bq=null;
+    for(let i=0;i<n;i++) for(let j=i+2;j<n;j++){
+      const a=Hh[i],b=Hh[j];
+      const vx=b[0]-a[0],vy=b[1]-a[1];
+      let P=null,Q=null,mp=0,mn=0;
+      for(let k=0;k<n;k++){
+        if(k===i||k===j) continue;
+        const cr=vx*(Hh[k][1]-a[1])-vy*(Hh[k][0]-a[0]);
+        if(cr>mp){mp=cr;P=Hh[k];}
+        else if(cr<mn){mn=cr;Q=Hh[k];}
+      }
+      if(!P||!Q) continue;
+      const area=(mp-mn)/2;
+      if(area>best){best=area;bq=[a,P,b,Q];}
+    }
+    return bq?orderCCW(bq):null;
+  }
+
+  /** 最小二乘拟合直线（主成分方向），返回 [px,py,dx,dy] */
+  function fitLine(pts){
+    const n=pts.length; let mx=0,my=0;
+    for(const p of pts){mx+=p[0];my+=p[1];} mx/=n; my/=n;
+    let sxx=0,sxy=0,syy=0;
+    for(const p of pts){const a=p[0]-mx,b=p[1]-my; sxx+=a*a; sxy+=a*b; syy+=b*b;}
+    const th=0.5*Math.atan2(2*sxy,sxx-syy);
+    return [mx,my,Math.cos(th),Math.sin(th)];
+  }
+  function lineCross(L1,L2){
+    const den=L1[2]*L2[3]-L1[3]*L2[2];
+    if(Math.abs(den)<1e-9) return null;
+    const t=((L2[0]-L1[0])*L2[3]-(L2[1]-L1[1])*L2[2])/den;
+    return [L1[0]+L1[2]*t, L1[1]+L1[3]*t];
+  }
+  /** 把边界点按最近的边分组，拟合四条直线再求交点 → 亚像素角点 */
+  function refineQuad(pts,quad){
+    let per=0;
+    for(let k=0;k<4;k++) per+=Math.hypot(quad[(k+1)%4][0]-quad[k][0],quad[(k+1)%4][1]-quad[k][1]);
+    const tol=per/4*0.10;
+    const groups=[[],[],[],[]];
+    for(const p of pts){
+      let best=-1,bd=tol;
+      for(let k=0;k<4;k++){
+        const a=quad[k],b=quad[(k+1)%4];
+        const vx=b[0]-a[0],vy=b[1]-a[1],L2=vx*vx+vy*vy;
+        if(L2<1) continue;
+        const t=((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L2;
+        if(t<0.18||t>0.82) continue;
+        const d=Math.abs((p[0]-a[0])*vy-(p[1]-a[1])*vx)/Math.sqrt(L2);
+        if(d<bd){bd=d;best=k;}
+      }
+      if(best>=0) groups[best].push(p);
+    }
+    const lines=[];
+    for(let k=0;k<4;k++){ if(groups[k].length<5) return quad; lines.push(fitLine(groups[k])); }
+    const out=[];
+    for(let k=0;k<4;k++){
+      const q=lineCross(lines[(k+3)%4],lines[k]);
+      if(!q||Math.hypot(q[0]-quad[k][0],q[1]-quad[k][1])>tol*3) return quad;
+      out.push(q);
+    }
+    return out;
+  }
+
+  /** 采样一个单元格的平均灰度；越界返回 -1 */
+  function cellMean(h,u0,v0,step){
+    let sum=0,n=0;
+    for(let a=1;a<=3;a++) for(let b=1;b<=3;b++){
+      const q=applyH(h,u0+step*a/4,v0+step*b/4);
+      const xi=Math.round(q[0]), yi=Math.round(q[1]);
+      if(xi<0||yi<0||xi>=W||yi>=H) return -1;
+      sum+=gray[yi*W+xi]; n++;
+    }
+    return sum/n;
+  }
+  /** 对 36 个格子的灰度做 Otsu，求类间方差最大的阈值 */
+  function otsu36(v){
+    const a=Array.from(v).sort((x,y)=>x-y), n=a.length;
+    let total=0; for(const x of a) total+=x;
+    let best=-1, thr=a[0], sumB=0, wB=0;
+    for(let k=0;k<n-1;k++){
+      wB++; sumB+=a[k];
+      const wF=n-wB; if(!wF) break;
+      const mB=sumB/wB, mF=(total-sumB)/wF;
+      const between=wB*wF*(mB-mF)*(mB-mF);
+      if(between>best){ best=between; thr=(a[k]+a[k+1])/2; }
+    }
+    return thr;
+  }
+  /**
+   * 校验一个四边形是不是 4x4 标记。
+   * 关键：阈值取自标记自身的 36 个格子，而不是全局自适应二值图——
+   * 全局阈值的窗口半径（W/22）远大于小标记本身，会把整块标记连同
+   * 内部白格一起判成实心黑，导致远处/大角度的小标记全部漏检。
+   */
+  function checkMarker(quad){
+    const h=homography([[0,0],[1,0],[1,1],[0,1]],quad);
+    if(!h) return false;
+    const st=1/6, mean=new Float64Array(36);
+    for(let gy=0;gy<6;gy++) for(let gx=0;gx<6;gx++){
+      const m=cellMean(h,gx*st,gy*st,st);
+      if(m<0) return false;
+      mean[gy*6+gx]=m;
+    }
+    let lo=Infinity,hi=-Infinity;
+    for(const m of mean){ if(m<lo)lo=m; if(m>hi)hi=m; }
+    if(hi-lo<26) return false;          // 对比度太低，不是标记
+    const thr=otsu36(mean);
+    let borderDark=0, innerDark=0;
+    for(let gy=0;gy<6;gy++) for(let gx=0;gx<6;gx++){
+      const dark = mean[gy*6+gx] < thr ? 1 : 0;
+      if(gx===0||gy===0||gx===5||gy===5) borderDark+=dark; else innerDark+=dark;
+    }
+    if(borderDark<18) return false;                 // 20 个边框格，允许 2 个误判
+    if(innerDark===0||innerDark===16) return false; // 排除纯色块
+    return true;
+  }
+
+  function detect(img){
+    alloc(img.width,img.height);
+    toGray(img.data);
+    adaptive(Math.max(3,(W/22)|0), 8);
+    labels.fill(0);
+    const found=[];
+    const minCount=Math.max(24,(W*H)/20000);
+    const maxCount=(W*H)*0.35;
+    let lab=0;
+    for(let y=1;y<H-1;y++){
+      const row=y*W;
+      for(let x=1;x<W-1;x++){
+        const idx=row+x;
+        if(!bin[idx]||labels[idx]) continue;
+        lab++;
+        let sp=0, cnt=0;
+        stack[sp++]=idx; labels[idx]=lab;
+        const bx=[],by=[];
+        let minx=x,maxx=x,miny=y,maxy=y;
+        while(sp>0){
+          const p=stack[--sp]; cnt++;
+          const py=(p/W)|0, px=p-py*W;
+          if(px<minx)minx=px; if(px>maxx)maxx=px;
+          if(py<miny)miny=py; if(py>maxy)maxy=py;
+          let edge=false;
+          if(px<=0||py<=0||px>=W-1||py>=H-1) edge=true;
+          else{
+            if(!bin[p-1]||!bin[p+1]||!bin[p-W]||!bin[p+W]) edge=true;
+          }
+          if(edge&&bx.length<20000){bx.push(px);by.push(py);}
+          if(px>0&&bin[p-1]&&!labels[p-1]){labels[p-1]=lab;stack[sp++]=p-1;}
+          if(px<W-1&&bin[p+1]&&!labels[p+1]){labels[p+1]=lab;stack[sp++]=p+1;}
+          if(py>0&&bin[p-W]&&!labels[p-W]){labels[p-W]=lab;stack[sp++]=p-W;}
+          if(py<H-1&&bin[p+W]&&!labels[p+W]){labels[p+W]=lab;stack[sp++]=p+W;}
+        }
+        if(cnt<minCount||cnt>maxCount) continue;
+        const bw=maxx-minx+1, bh=maxy-miny+1;
+        if(bw<10||bh<10) continue;
+        const ar=bw/bh; if(ar<0.22||ar>4.5) continue;
+        // 采样边界点
+        const step=Math.max(1,Math.ceil(bx.length/1200));
+        const pts=[];
+        for(let i=0;i<bx.length;i+=step) pts.push([bx[i],by[i]]);
+        if(pts.length<8) continue;
+        const hull=hullOf(pts);
+        if(hull.length<4) continue;
+        let quad=quadFromHull(hull);
+        if(!quad) continue;
+        quad=refineQuad(pts,quad);
+        const qa=polyArea(quad), ha=polyArea(hull);
+        if(qa<90||ha<=0||qa/ha<0.82) continue;
+        let ok=true;
+        for(let i=0;i<4;i++){ if(dist2(quad[i],quad[(i+1)%4])<49){ok=false;break;} }
+        if(!ok) continue;
+        if(!checkMarker(quad)) continue;
+        // 对角线交点 = 正方形的投影中心
+        const c=lineIntersect(quad[0],quad[2],quad[1],quad[3]) ||
+                [(quad[0][0]+quad[1][0]+quad[2][0]+quad[3][0])/4,(quad[0][1]+quad[1][1]+quad[2][1]+quad[3][1])/4];
+        found.push({quad,center:c,area:qa});
+      }
+    }
+    found.sort((a,b)=>b.area-a.area);
+    return found.slice(0,8);
+  }
+
+  function lineIntersect(p1,p2,p3,p4){
+    const d=(p1[0]-p2[0])*(p3[1]-p4[1])-(p1[1]-p2[1])*(p3[0]-p4[0]);
+    if(Math.abs(d)<1e-9) return null;
+    const a=p1[0]*p2[1]-p1[1]*p2[0], b=p3[0]*p4[1]-p3[1]*p4[0];
+    return [(a*(p3[0]-p4[0])-(p1[0]-p2[0])*b)/d,(a*(p3[1]-p4[1])-(p1[1]-p2[1])*b)/d];
+  }
+
+  /** 只做灰度化：位姿锁定时不必再找标记，但棋子识别仍需最新灰度 */
+  function prepareGray(img){ alloc(img.width,img.height); toGray(img.data); }
+  return {detect, prepareGray, get gray(){return gray}, get binary(){return bin}, get size(){return [W,H]}};
+})();
+
+/* ============================================================
+   3) 状态
+   ============================================================ */
+const S={
+  N:15, off:1.2, opacity:.85,
+  running:false, flat:false, locked:false, debug:false,
+  quad:null,            // 平滑后的四个标记中心（视频像素）TL,TR,BR,BL
+  H:null, Hinv:null,
+  lastSeenAt:0, detCount:0, dbgQuads:[],
+  board:null, moves:[], turn:1, winner:0, winLine:null,
+  fps:0,
+  /* 座位：black=我执黑, white=我执白, solo=单机双方 */
+  seat:'black', peerSeat:null, peerSeen:0,
+  lineLight:false, hideOwn:true,
+  // ROI 直播：不依赖标记，手动框出棋盘区域直接传给对端
+  roi:{on:false, edit:false, fill:true, x:0.20, y:0.15, w:0.60, h:0.70,
+       zoom:1, panX:0, panY:0,
+       // 投影是歪的，框选必须能拖成任意四边形：左上/右上/右下/左下
+       q:[[0.20,0.15],[0.80,0.15],[0.80,0.85],[0.20,0.85]], sel:0},
+  // 固定棋盘：不跟踪标记，直接画在画面正中
+  fixed:{on:true, size:0.95},
+  // 棋盘区之外遮黑，藏掉摄像头里多余的东西；pad 单位是格
+  mask:{on:true, pad:0.35},
+  // 梯形校正：四角偏移量（相对画面宽高的比例），投影仪位置固定时预先反向畸变
+  ks:{on:false, sel:0, c:[[0,0],[0,0],[0,0],[0,0]]},
+  /* 摄像头标定：投影棋盘的四个角在摄像头画面里的位置（归一化视频坐标）。
+     有了它就能在固定棋盘模式下把 (i,j) 映射到摄像头像素，不再依赖 ArUco 的 S.H。
+     顺序：左上、右上、右下、左下，对应棋盘 (0,0) (N-1,0) (N-1,N-1) (0,N-1) */
+  lastDet:null, pendMsg:'', lastErr:'', diffN:0, bulkN:0, lastCls:null,
+  screenGrid:true,   // 按屏幕上画出的格线取样（所见即所测）
+  absMode:true,      // 与自身周围板面比较，不依赖空盘基准
+  cal:{on:false, sel:0, ok:false,
+       pts:[[0.28,0.20],[0.72,0.20],[0.72,0.80],[0.28,0.80]]},
+  roiFps:10, roiQ:0.6, upBytes:0, upRate:0,
+  remoteAt:0, remoteLag:0,
+  procW:960,       // 识别用的处理分辨率（宽）
+  procRetry:true,  // 凑不齐 4 个标记时自动升分辨率重试
+  retried:0,
+  netMode:'off',   // off | ws | bc
+  /* 实体棋子识别 */
+  detectStones:true, stoneTh:24, stoneThW:14, stoneStable:6, autoUndo:true,
+  showPending:true,
+  ref:null, cur:null, phys:null, cand:null, candN:null, score:null,
+  physCount:0, occluded:false, cellPx:0
+};
+/** 我这一端负责的颜色；solo 模式跟着轮次走 */
+const MY=()=> S.seat==='solo' ? S.turn : (S.seat==='white'?2:1);
+function allocStones(){
+  const n=S.N*S.N;
+  S.phys=new Int8Array(n); S.cand=new Int8Array(n); S.candN=new Int16Array(n);
+  S.score=new Float32Array(n);
+  S.ref=null; S.cur=null; S.physCount=0;
+}
+function newBoard(){ S.board=new Int8Array(S.N*S.N); S.moves=[]; S.turn=1; S.winner=0; S.winLine=null; }
+(function initSeat(){
+  const q=new URLSearchParams(location.search);
+  const v=(q.get('seat')||'black').toLowerCase();
+  S.seat = v==='white'||v==='w' ? 'white' : v==='solo'||v==='s' ? 'solo' : 'black';
+})();
+newBoard(); allocStones();
+
+const video=document.getElementById('video');
+const overlay=document.getElementById('overlay');
+const ctx=overlay.getContext('2d');
+const hint=document.getElementById('hint');
+const stage=document.getElementById('stage');
+
+/* 处理用离屏画布 */
+const proc=document.createElement('canvas');
+const pctx=proc.getContext('2d',{willReadFrequently:true});
+const proc2=document.createElement('canvas');
+const p2ctx=proc2.getContext('2d',{willReadFrequently:true});
+
+/* 视频像素 → 画布像素的缩放（object-fit:contain 的信箱变换） */
+let VW=0,VH=0,vScale=1,vOffX=0,vOffY=0,curDpr=1;
+function layout(){
+  const r=overlay.getBoundingClientRect();
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  curDpr=dpr;
+  overlay.width=Math.max(1,Math.round(r.width*dpr));
+  overlay.height=Math.max(1,Math.round(r.height*dpr));
+  if(VW&&VH){
+    const s=Math.min(overlay.width/VW,overlay.height/VH);
+    vScale=s; vOffX=(overlay.width-VW*s)/2; vOffY=(overlay.height-VH*s)/2;
+  }else{
+    vScale=1; vOffX=0; vOffY=0;
+  }
+  // 平面模式下没有视频尺寸参考，棋盘要跟着画布重新铺开
+  if(S && S.flat && !S.running) flatPose();
+}
+new ResizeObserver(layout).observe(stage);
+window.addEventListener('resize',layout);
+
+const v2c=(p)=>[p[0]*vScale+vOffX,p[1]*vScale+vOffY];
+const c2v=(x,y)=>[(x-vOffX)/vScale,(y-vOffY)/vScale];
+
+/* ============================================================
+   4) 摄像头
+   ============================================================ */
+let stream=null, devices=[];
+/* 影石 Link 2 / Insta360 等外接摄像头优先匹配 */
+const PREF_RE=/insta\s*360|影石|link\s*2|link2|link\b/i;
+/* 两个窗口同源，摄像头记忆必须按座位分开存，否则会互相覆盖 */
+const camKey=()=>'aruco.cam.'+S.seat;
+
+async function enumerate(){
+  try{
+    devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+  }catch(e){ devices=[]; }
+  const sel=document.getElementById('camSel');
+  sel.innerHTML = devices.length
+    ? devices.map((d,i)=>`<option value="${d.deviceId}">[${i}] ${d.label||('摄像头 '+i)}</option>`).join('')
+    : '<option value="">（未发现摄像头）</option>';
+  return devices;
+}
+/** 选设备：上次选择 → 名字命中影石 → 面板上的索引 → 第 0 个 */
+function pickDevice(){
+  if(!devices.length) return null;
+  const saved=localStorage.getItem(camKey());
+  if(saved&&devices.some(d=>d.deviceId===saved)) return saved;
+  const hit=devices.find(d=>PREF_RE.test(d.label||''));
+  if(hit) return hit.deviceId;
+  const idx=Math.min(devices.length-1,Math.max(0,+document.getElementById('camIdx').value||0));
+  return devices[idx].deviceId;
+}
+async function startCamera(deviceId){
+  try{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    if(!deviceId){
+      // 未授权时 label 是空的，先要一次权限才能按名字/索引挑设备
+      await enumerate();
+      if(!devices.length||!devices[0].label){
+        const tmp=await navigator.mediaDevices.getUserMedia({video:true});
+        tmp.getTracks().forEach(t=>t.stop());
+        await enumerate();
+      }
+      deviceId=pickDevice();
+    }
+    const c={audio:false,video:deviceId
+      ?{deviceId:{exact:deviceId},width:{ideal:1920},height:{ideal:1080}}
+      :{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}};
+    stream=await navigator.mediaDevices.getUserMedia(c);
+    video.srcObject=stream;
+    await video.play();
+    VW=video.videoWidth; VH=video.videoHeight;
+    stage.style.aspectRatio=VW+'/'+VH;
+    layout();
+    S.running=true; S.flat=false;
+    document.getElementById('btnFlat').classList.remove('on');
+    document.getElementById('btnStart').textContent='关闭摄像头';
+    document.getElementById('btnStart').classList.remove('primary');
+    await enumerate();
+    const st=stream.getVideoTracks()[0].getSettings();
+    const cur=st.deviceId||deviceId;
+    if(cur){ document.getElementById('camSel').value=cur; localStorage.setItem(camKey(),cur); }
+    const dev=devices.find(d=>d.deviceId===cur);
+    const idx=devices.indexOf(dev);
+    const name=(dev&&dev.label)||stream.getVideoTracks()[0].label||'摄像头';
+    tag(document.getElementById('tagCam'),(idx>=0?'['+idx+'] ':'')+name.slice(0,26),'ok');
+    document.getElementById('tagRes').textContent=VW+'×'+VH;
+    setHint('点「调整框选」，把四个角拖到棋盘的四个角上');
+  }catch(e){
+    setHint('摄像头打开失败：'+e.name+' '+e.message+'（需 https 或 localhost；设备可能被其他程序占用）');
+    tag(document.getElementById('tagDet'),'不可用','bad');
+    tag(document.getElementById('tagCam'),'打开失败','bad');
+  }
+}
+function stopCamera(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=null; video.srcObject=null; S.running=false; S.quad=null; S.H=null;
+  gimbalOff();
+  document.getElementById('btnStart').textContent='开启摄像头';
+  document.getElementById('btnStart').classList.add('primary');
+  tag(document.getElementById('tagDet'),'未开始','');
+  tag(document.getElementById('tagCam'),'—','');
+  document.getElementById('tagRes').textContent='—';
+}
+if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener)
+  navigator.mediaDevices.addEventListener('devicechange',()=>enumerate());
+enumerate();
+
+/* ============================================================
+   5) 位姿求解
+   ============================================================ */
+function sortCorners(centers){
+  const cx=centers.reduce((s,p)=>s+p[0],0)/4, cy=centers.reduce((s,p)=>s+p[1],0)/4;
+  const byAngle=centers.slice().sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx));
+  let k=0,best=Infinity;
+  for(let i=0;i<4;i++){const s=byAngle[i][0]+byAngle[i][1]; if(s<best){best=s;k=i;}}
+  const q=[byAngle[k],byAngle[(k+1)%4],byAngle[(k+2)%4],byAngle[(k+3)%4]];
+  // 保证顺序为 TL,TR,BR,BL（图像坐标 y 向下 → 顺时针）
+  const cross=(q[1][0]-q[0][0])*(q[2][1]-q[0][1])-(q[1][1]-q[0][1])*(q[2][0]-q[0][0]);
+  return cross>0?q:[q[0],q[3],q[2],q[1]];
+}
+function updatePose(centers){
+  const q=sortCorners(centers);
+  if(S.quad){
+    const span=Math.hypot(q[2][0]-q[0][0],q[2][1]-q[0][1]);
+    let far=false;
+    for(let i=0;i<4;i++) if(Math.hypot(q[i][0]-S.quad[i][0],q[i][1]-S.quad[i][1])>span*0.25) far=true;
+    const a=far?1:0.35;
+    for(let i=0;i<4;i++){
+      S.quad[i][0]+= (q[i][0]-S.quad[i][0])*a;
+      S.quad[i][1]+= (q[i][1]-S.quad[i][1])*a;
+    }
+  }else S.quad=q.map(p=>[p[0],p[1]]);
+  rebuildH();
+}
+function rebuildH(){
+  if(!S.quad) return;
+  S.H=homography([[0,0],[1,0],[1,1],[0,1]],S.quad);
+  S.Hinv=S.H?invH(S.H):null;
+}
+function flatPose(){
+  const w=VW||overlay.width, h=VH||overlay.height;
+  // 画布还没拿到尺寸时不要算出退化的四边形，否则 S.H 会是 null 而调用方以为有位姿
+  if(!(w>16&&h>16)){ S.quad=null; S.H=null; S.Hinv=null; return; }
+  const m=Math.min(w,h)*0.06, side=Math.min(w,h)-m*2;
+  const x0=(w-side)/2, y0=(h-side)/2;
+  S.quad=[[x0,y0],[x0+side,y0],[x0+side,y0+side],[x0,y0+side]];
+  rebuildH();
+}
+
+/* 棋盘坐标 ↔ 视频坐标 */
+function span(){ return S.N-1+2*S.off; }
+function ij2video(i,j){ const d=span(); return applyH(S.H,(i+S.off)/d,(j+S.off)/d); }
+function video2ij(x,y){
+  if(!S.Hinv) return null;
+  const [u,v]=applyH(S.Hinv,x,y); const d=span();
+  return [u*d-S.off, v*d-S.off];
+}
+
+/* ============================================================
+   5.5) 数字云台：把棋盘区域透视矫正后铺满画面
+   ------------------------------------------------------------
+   视频本身用 CSS matrix3d 做投影变换（GPU 负责，逐帧零 CPU 成本），
+   叠加层则直接在矫正后的矩形里画格线，两者共用同一个输出单应。
+   ============================================================ */
+const G={on:false, margin:0.7, rot:0, Hb2o:null, Hv2o:null, W:0, H:0, D:1, m:0.7, _css:''};
+
+function gimbalOff(){
+  G.Hb2o=null; G.Hv2o=null;
+  if(G._css){ video.style.transform=''; video.style.width=''; video.style.height='';
+              video.style.objectFit=''; G._css=''; }
+  if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH;
+}
+function gimbalUpdate(){
+  if(!G.on||!S.H||!S.running||!VW){ gimbalOff(); return; }
+  const r=stage.getBoundingClientRect();
+  if(!(r.width>0&&r.height>0)) return;
+  G.W=r.width; G.H=r.height;
+
+  const m=G.margin, N=S.N, D=N-1+2*m;
+  G.D=D; G.m=m;
+  // 裁切区四角（视频像素）
+  const q=[ij2video(-m,-m), ij2video(N-1+m,-m), ij2video(N-1+m,N-1+m), ij2video(-m,N-1+m)];
+  for(const pt of q) if(!isFinite(pt[0])||!isFinite(pt[1])) return;
+  const unit=[[0,0],[1,0],[1,1],[0,1]];
+  const Hb2v=homography(unit,q); if(!Hb2v) return;
+  /* 裁切区在棋盘坐标里是正方形，必须映射到画面中居中的最大正方形，
+     直接铺满 16:9 的 stage 会把格子横向拉扁 */
+  const side=Math.min(G.W,G.H), ox=(G.W-side)/2, oy=(G.H-side)/2;
+  const rect=[[ox,oy],[ox+side,oy],[ox+side,oy+side],[ox,oy+side]];
+  const rr=[0,1,2,3].map(k=>rect[(k+G.rot)%4]);
+  const Hb2o=homography(unit,rr); if(!Hb2o) return;
+  const iv=invH(Hb2v); if(!iv) return;
+  const Hv2o=hMul(Hb2o,iv); if(!Hv2o) return;
+  G.Hb2o=Hb2o; G.Hv2o=Hv2o;
+
+  const css='matrix3d('+[Hv2o[0],Hv2o[3],0,Hv2o[6],
+                         Hv2o[1],Hv2o[4],0,Hv2o[7],
+                         0,0,1,0,
+                         Hv2o[2],Hv2o[5],0,1].join(',')+')';
+  if(css!==G._css){
+    video.style.width=VW+'px'; video.style.height=VH+'px';
+    video.style.objectFit='fill'; video.style.transformOrigin='0 0';
+    video.style.transform=css;
+    G._css=css;
+  }
+}
+/* ---- 梯形校正：同一组四角偏移，导出画布像素与 CSS 像素两套单应 ---- */
+/* PT() 每个点都会问一次，所以这里必须是纯粹的脏标记缓存：
+   绝不能在其中调 getBoundingClientRect（会强制重排）或做字符串化比较 */
+let ksCache={canvas:null,css:null,inv:null,W:0,H:0,dirty:true};
+function ksMark(){ ksCache.dirty=true; saveCfg(); }
+/* ---- 现场参数持久化（按座位分开存，两端互不干扰） ---- */
+const cfgKey=()=>'aruco.cfg.'+S.seat;
+let cfgTimer=null;
+function saveCfg(){
+  if(typeof IS_PROJ!=='undefined'&&IS_PROJ) return;   // 输出窗只渲染，不回写配置
+  if(typeof projTimer!=='undefined'&&projTimer) projPush();
+  clearTimeout(cfgTimer);
+  cfgTimer=setTimeout(()=>{
+    try{
+      localStorage.setItem(cfgKey(),JSON.stringify({
+        ks:S.ks, roi:{x:S.roi.x,y:S.roi.y,w:S.roi.w,h:S.roi.h,q:S.roi.q,
+                      on:S.roi.on,fill:S.roi.fill,zoom:S.roi.zoom,
+                      panX:S.roi.panX,panY:S.roi.panY},
+        fixed:S.fixed, mask:S.mask, hideOwn:S.hideOwn, lineLight:S.lineLight, cal:S.cal,
+        stoneTh:S.stoneTh, stoneThW:S.stoneThW, showPending:S.showPending, screenGrid:S.screenGrid,
+        absMode:S.absMode
+      }));
+    }catch(e){}
+  },400);
+}
+function loadCfg(){
+  let c=null;
+  try{ c=JSON.parse(localStorage.getItem(cfgKey())||'null'); }catch(e){}
+  if(!c) return;
+  if(c.ks&&Array.isArray(c.ks.c)&&c.ks.c.length===4) S.ks=Object.assign(S.ks,c.ks);
+  if(c.roi){
+    Object.assign(S.roi,c.roi);
+    if(!Array.isArray(S.roi.q)||S.roi.q.length!==4){   // 旧配置只有矩形，升级成四边形
+      const x=S.roi.x,y=S.roi.y,w=S.roi.w,h=S.roi.h;
+      S.roi.q=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
+    }
+    S.roi.sel=0;
+  }
+  if(c.fixed) Object.assign(S.fixed,c.fixed);
+  if(c.mask) Object.assign(S.mask,c.mask);
+  if(c.cal&&Array.isArray(c.cal.pts)&&c.cal.pts.length===4){
+    Object.assign(S.cal,c.cal); S.cal.on=false; calMark();
+  }
+  if(typeof c.hideOwn==='boolean') S.hideOwn=c.hideOwn;
+  if(typeof c.stoneTh==='number') S.stoneTh=c.stoneTh;
+  if(typeof c.stoneThW==='number') S.stoneThW=c.stoneThW;
+  if(typeof c.showPending==='boolean') S.showPending=c.showPending;
+  if(typeof c.screenGrid==='boolean') S.screenGrid=c.screenGrid;
+  if(typeof c.absMode==='boolean') S.absMode=c.absMode;
+  if(typeof c.lineLight==='boolean') S.lineLight=c.lineLight;
+  S.roi.edit=false;
+  ksCache.dirty=true;
+}
+function ksActive(){
+  return S.ks.on && !S.roi.edit && !S.cal.on && S.ks.c.some(o=>o[0]||o[1]);
+}
+function ksBuild(){
+  const W=overlay.width, H=overlay.height;
+  if(!ksCache.dirty && ksCache.W===W && ksCache.H===H) return ksCache;
+  ksCache.W=W; ksCache.H=H; ksCache.dirty=false;
+  if(!ksActive()||!W||!H){ ksCache.canvas=ksCache.css=ksCache.inv=null; return ksCache; }
+  const src=[[0,0],[W,0],[W,H],[0,H]];
+  const dst=src.map((p,k)=>[p[0]+S.ks.c[k][0]*W, p[1]+S.ks.c[k][1]*H]);
+  const canvasH=homography(src,dst);
+  /* CSS 像素版是画布版按 dpr 做的相似变换共轭：
+     H_css = S⁻¹·H_canvas·S（S 为放大 dpr）→ 平移项除以 dpr，透视项乘以 dpr */
+  const d=curDpr||1;
+  const cssH=canvasH?[canvasH[0],canvasH[1],canvasH[2]/d,
+                      canvasH[3],canvasH[4],canvasH[5]/d,
+                      canvasH[6]*d,canvasH[7]*d]:null;
+  ksCache.canvas=canvasH;
+  ksCache.inv=canvasH?invH(canvasH):null;
+  ksCache.css=cssH;
+  return ksCache;
+}
+
+/* ---- 摄像头标定：board 归一化坐标 → 视频像素 ---- */
+let calCache={key:'',H:null};
+function calH(){
+  if(!S.cal.ok||!VW||!VH) return null;
+  const key=VW+'x'+VH+':'+JSON.stringify(S.cal.pts);
+  if(key===calCache.key) return calCache.H;
+  const dst=S.cal.pts.map(q=>[q[0]*VW,q[1]*VH]);
+  calCache={key, H:homography([[0,0],[1,0],[1,1],[0,1]],dst)};
+  return calCache.H;
+}
+function calMark(){ calCache.key=''; }
+
+/** 固定棋盘在画布中的正方形区域 */
+function fixedRect(){
+  const W=overlay.width, H=overlay.height;
+  const side=Math.min(W,H)*S.fixed.size;
+  return {x:(W-side)/2, y:(H-side)/2, step:side/Math.max(1,S.N-1)};
+}
+/** 棋盘坐标 → 画布像素，最后叠加梯形校正 */
+function PT(i,j){
+  const p=PTbase(i,j);
+  const k=ksBuild();
+  return k.canvas? applyH(k.canvas,p[0],p[1]) : p;
+}
+/** 棋盘坐标 → 画布像素（固定棋盘 > 云台 > 原始视频） */
+function PTbase(i,j){
+  if(S.fixed.on){
+    const f=fixedRect();
+    return [f.x+i*f.step, f.y+j*f.step];
+  }
+  if(G.on&&G.Hb2o){
+    const dpr=overlay.width/G.W;
+    const p=applyH(G.Hb2o,(i+G.m)/G.D,(j+G.m)/G.D);
+    return [p[0]*dpr,p[1]*dpr];
+  }
+  return v2c(ij2video(i,j));
+}
+/** 画布像素 → 棋盘坐标 */
+function canvasToIJ(cx,cy){
+  const k=ksBuild();
+  if(k.inv){ const q=applyH(k.inv,cx,cy); cx=q[0]; cy=q[1]; }
+  if(S.fixed.on){
+    const f=fixedRect();
+    return [(cx-f.x)/f.step, (cy-f.y)/f.step];
+  }
+  if(G.on&&G.Hb2o){
+    const dpr=overlay.width/G.W, iv=invH(G.Hb2o);
+    if(!iv) return null;
+    const uv=applyH(iv,cx/dpr,cy/dpr);
+    return [uv[0]*G.D-G.m, uv[1]*G.D-G.m];
+  }
+  const v=c2v(cx,cy);
+  return video2ij(v[0],v[1]);
+}
+
+/* ============================================================
+   6) 五子棋规则
+   ============================================================ */
+const at=(i,j)=> (i<0||j<0||i>=S.N||j>=S.N)?-1:S.board[j*S.N+i];
+function place(i,j){
+  if(S.winner||at(i,j)!==0) return false;
+  S.board[j*S.N+i]=S.turn;
+  S.moves.push([i,j,S.turn]);
+  const line=findWin(i,j,S.turn);
+  if(line){ S.winner=S.turn; S.winLine=line; }
+  else S.turn=S.turn===1?2:1;
+  syncUI();
+  return true;
+}
+function undo(){
+  const m=S.moves.pop(); if(!m) return;
+  S.board[m[1]*S.N+m[0]]=0;
+  S.turn=m[2]; S.winner=0; S.winLine=null;
+  syncUI();
+}
+function findWin(i,j,c){
+  const dirs=[[1,0],[0,1],[1,1],[1,-1]];
+  for(const [dx,dy] of dirs){
+    const pts=[[i,j]];
+    for(let s=1;s<5;s++){const x=i+dx*s,y=j+dy*s; if(at(x,y)!==c)break; pts.push([x,y]);}
+    for(let s=1;s<5;s++){const x=i-dx*s,y=j-dy*s; if(at(x,y)!==c)break; pts.unshift([x,y]);}
+    if(pts.length>=5) return pts.slice(0,5);
+  }
+  return null;
+}
+
+/* ============================================================
+   6.5) 实体棋子识别（空盘基准差分）
+   ------------------------------------------------------------
+   在“棋盘坐标”里采样，而不是在图像坐标里：位姿抖动或整张纸被挪动
+   都不会让基准失效，因为每帧都按当前单应重新定位交叉点。
+   ============================================================ */
+let procK=1;   // video 像素 = proc 像素 * procK
+/* 一帧内允许与已确认状态不符的最大交叉点数；超过即判为遮挡 */
+const CLEAN_MAX=6;
+
+/** 采样每个交叉点邻域的平均灰度 */
+/** 屏幕上画出格线的地方 → 摄像头原始像素。
+    反解当前显示变换即可：屏幕看到格线压在哪颗子上，就采样那颗子。 */
+function screenToVideo(i,j){
+  const p=PTbase(i,j);                     // 画布像素，不含梯形校正
+  const d=curDpr||1;
+  if(fitInfo.active&&fitInfo.inv) return applyH(fitInfo.inv, p[0]/d, p[1]/d);
+  return c2v(p[0],p[1]);                   // 未做 ROI 变换时就是普通 contain 布局
+}
+/** 当前用于采样的 棋盘(i,j) → 视频像素 映射 */
+function currentBP(){
+  if(S.screenGrid && (S.fixed.on||S.H)) return screenToVideo;
+  const Hc=calH();
+  if(Hc) return (i,j)=>applyH(Hc,i/(S.N-1),j/(S.N-1));
+  if(S.H) return ij2video;
+  return null;
+}
+function sampleStones(){
+  const g=Det.gray; if(!g) return null;
+  const [pw,ph]=Det.size; if(!pw) return null;
+  const N=S.N, out=new Float32Array(N*N);
+  const Hc=S.screenGrid ? null : calH();
+  if(!S.screenGrid && !Hc && !S.H) return null;
+  if(S.screenGrid && !S.fixed.on && !S.H) return null;
+  /* 默认按屏幕网格取样：所见即所测，不需要第二套标定。
+     关掉时回退到四角标定，再不行才用 ArUco 位姿。 */
+  const bp = S.screenGrid ? screenToVideo
+           : Hc ? ((i,j)=>applyH(Hc, i/(N-1), j/(N-1)))
+           : ij2video;
+  const a=bp(0,0), b=bp(1,0), c=bp(0,1);
+  const cell=(Math.hypot(b[0]-a[0],b[1]-a[1])+Math.hypot(c[0]-a[0],c[1]-a[1]))/2/procK;
+  S.cellPx=cell;
+  if(!(cell>2)) return null;
+  const r=Math.max(2,Math.min(16,cell*0.30)), r2=r*r;
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const q=bp(i,j), cx=q[0]/procK, cy=q[1]/procK;
+    let sum=0,n=0;
+    const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(pw-1,Math.ceil(cx+r));
+    const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(ph-1,Math.ceil(cy+r));
+    for(let y=y0;y<=y1;y++){
+      const dy=y-cy;
+      for(let x=x0;x<=x1;x++){ const dx=x-cx; if(dx*dx+dy*dy>r2) continue; sum+=g[y*pw+x]; n++; }
+    }
+    out[j*N+i]= n?sum/n:NaN;
+  }
+  return out;
+}
+function median(arr){
+  const a=[]; for(const v of arr) if(!isNaN(v)) a.push(v);
+  if(!a.length) return 0;
+  a.sort((x,y)=>x-y); return a[a.length>>1];
+}
+/**
+ * 绝对法分类：每个交叉点拿"内圆均值"和"外环中位数"（= 该点周围的板面颜色）相比。
+ * 不需要空盘基准 —— 基准最大的问题是按下时盘上若已有子，那颗子就被写进基准，
+ * 之后永远检测不到。外环用中位数而不是均值，是为了让相邻棋子占掉一部分外环时不被带偏。
+ * 格线同时穿过内圆和外环，影响基本抵消。
+ */
+function classifyAbs(bp, pw, ph, g){
+  const N=S.N, n=N*N, cls=new Int8Array(n);
+  const a=bp(0,0), b=bp(1,0), c=bp(0,1);
+  const cell=(Math.hypot(b[0]-a[0],b[1]-a[1])+Math.hypot(c[0]-a[0],c[1]-a[1]))/2/procK;
+  if(!(cell>4)) return null;
+  const rIn=Math.max(2,cell*0.30);
+  const r1=cell*0.58, r2=cell*0.92;
+  const T=S.stoneTh, TW=S.stoneThW;
+  const ring=[], inn=[];
+  const med=arr=>{ arr.sort((x,y)=>x-y); return arr[arr.length>>1]; };
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const q=bp(i,j), cx=q[0]/procK, cy=q[1]/procK;
+    /* 内圆必须用中位数，不能用均值：内圆正套在交叉点上，
+       里面必然含有十字格线（约占面积 1/4），均值会被压暗 30~40 灰阶，
+       导致每个空点都满足"比周围暗"而被误判成黑子。
+       中位数在格线占比不过半时给出的就是板面颜色，有子时才会真的变。 */
+    inn.length=0;
+    const R=Math.ceil(rIn);
+    for(let y=-R;y<=R;y++) for(let x=-R;x<=R;x++){
+      if(x*x+y*y>rIn*rIn) continue;
+      const px=Math.round(cx+x), py=Math.round(cy+y);
+      if(px<0||py<0||px>=pw||py>=ph) continue;
+      inn.push(g[py*pw+px]);
+    }
+    if(inn.length<8){ cls[j*N+i]=0; continue; }
+    const inner=med(inn);
+    ring.length=0;
+    for(let t=0;t<24;t++){
+      const ang=t/24*Math.PI*2;
+      for(const rr of [r1,(r1+r2)/2,r2]){
+        const px=Math.round(cx+Math.cos(ang)*rr), py=Math.round(cy+Math.sin(ang)*rr);
+        if(px<0||py<0||px>=pw||py>=ph) continue;
+        ring.push(g[py*pw+px]);
+      }
+    }
+    if(ring.length<8){ cls[j*N+i]=0; continue; }
+    const board=med(ring);
+    const d=inner-board;
+    const seatC = S.seat==='white' ? 2 : S.seat==='black' ? 1 : 0;
+    let c = seatC===1 ? (d<-T?1:0)
+          : seatC===2 ? (d> TW?2:0)
+          : (d<-T?1 : d>TW?2 : 0);
+    /* 只看中位数差还不够：反光高光、纸面小亮斑也能把中位数顶上去。
+       真棋子是"整片都亮/都暗"，所以再要求内圆里越界的像素占多数。 */
+    if(c){
+      const lim = c===1 ? board-T : board+TW;
+      let hit=0;
+      for(const v of inn) if(c===1 ? v<lim : v>lim) hit++;
+      const fill=hit/inn.length;
+      if(fill<0.55) c=0;
+      else S.score[j*N+i]=Math.abs(d)*fill;   // 亮得越狠、面积越满，分越高
+    }
+    if(!c) S.score[j*N+i]=0;
+    cls[j*N+i]=c;
+  }
+  S.cellPx=cell;
+  return cls;
+}
+function updateStones(){
+  if(!S.detectStones) return;
+  const N=S.N, T=S.stoneTh, TW=S.stoneThW, n=N*N;
+  const seatC = S.seat==='white' ? 2 : S.seat==='black' ? 1 : 0;
+  let cls=null;
+  if(S.absMode){
+    const g=Det.gray, sz=Det.size;
+    if(!g||!sz[0]) return;
+    const bp=currentBP(); if(!bp) return;
+    cls=classifyAbs(bp, sz[0], sz[1], g);
+    if(!cls) return;
+  }else{
+    const cur=sampleStones(); if(!cur) return;
+    S.cur=cur;
+    if(!S.ref) return;
+    // 摄像头自动曝光会整体拉亮/压暗，用中位数（绝大多数点是空位）对齐基准
+    const off=median(cur)-median(S.ref);
+    cls=new Int8Array(n);
+    for(let k=0;k<n;k++){
+      const d=cur[k]-(S.ref[k]+off);
+    /* 每一端只认自己那一色：黑端只看"变暗"，白端只看"变亮"。
+       除了少一半误报，还有个实际好处——白端不看变暗，
+       手和手臂投下的阴影就不会被当成棋子。 */
+      cls[k]= seatC===1 ? (d<-T ? 1 : 0)
+            : seatC===2 ? (d> TW ? 2 : 0)
+            : (d<-T ? 1 : d>TW ? 2 : 0);
+    }
+  }
+  let diffN=0;
+  for(let k=0;k<n;k++) if(cls[k]!==S.phys[k]) diffN++;
+  /* 与“已确认状态”不符的交叉点数。正常落子只会有 1 个不符，手伸进来有几十个。
+     但一次摆好几颗子（或标定后首次布局）同样会超标，不能一律丢弃，
+     否则一个都认不出来。区分办法：手会动，棋子不会——
+     同一个图样连续稳定足够久，就当作真实布局放行。 */
+  S.diffN = diffN;
+  if(diffN > CLEAN_MAX){
+    let same = S.lastCls && S.lastCls.length===n;
+    if(same) for(let k=0;k<n;k++) if(S.lastCls[k]!==cls[k]){ same=false; break; }
+    S.bulkN = same ? S.bulkN+1 : 0;
+    S.lastCls = cls;
+    if(S.bulkN < S.stoneStable*3){
+      S.occluded=true;
+      S.cand.fill(-1); S.candN.fill(0);   // 冻结候选，避免手停久了被误确认
+      return;
+    }
+    // 稳定够久，认了
+  } else {
+    S.bulkN=0; S.lastCls=cls;
+  }
+  S.occluded=false;
+  for(let k=0;k<n;k++){
+    if(cls[k]===S.cand[k]) S.candN[k]++;
+    else { S.cand[k]=cls[k]; S.candN[k]=1; }
+    if(S.candN[k]>=S.stoneStable && S.phys[k]!==cls[k]){
+      const was=S.phys[k]; S.phys[k]=cls[k];
+      onPhysChange(k%N,(k/N)|0,cls[k],was);
+    }
+  }
+  let cnt=0; for(let k=0;k<n;k++) if(S.phys[k]) cnt++;
+  S.physCount=cnt;
+  /* 必须每周期都重判：只在"棋子刚出现"那一刻判的话，
+     若当时还没轮到本方，这颗子会永远卡在待判定，
+     而且 pendMsg 会停在旧文案上，与当前轮次自相矛盾 */
+  tryCommitPending();
+}
+function onPhysChange(i,j,now,was){
+  if(now){ S.lastDet=[i,j,now]; tryCommitPending(); return; }
+  // 棋子被拿走：正好是自己刚下的那一手 → 当作悔棋
+  const last=S.moves[S.moves.length-1];
+  if(S.autoUndo && was && last && last[0]===i && last[1]===j && last[2]===was &&
+     (S.seat==='solo'||was===MY())){
+    doUndo();
+  }
+}
+/** 桌面上出现了己方新棋子 → 落子并同步 */
+function tryCommitPending(){
+  S.pendMsg='';
+  if(!S.phys) return;
+  if(S.winner){ S.pendMsg='棋局已结束'; return; }
+  const me=MY(), N=S.N, mine=[], other=[];
+  for(let k=0;k<N*N;k++){
+    if(!S.phys[k]||S.board[k]) continue;      // 空位上认到的子才算待判定
+    (S.phys[k]===me ? mine : other).push(k);
+  }
+  const cname=c=>c===1?'黑':'白';
+  if(S.turn!==me){
+    if(mine.length||other.length) S.pendMsg='认到子了，但现在轮到'+cname(S.turn)+'方';
+    return;
+  }
+  if(!mine.length){
+    // 认到的是对方颜色：本端只负责自己那一色，这是最常见的"看起来没识别"的原因
+    if(other.length) S.pendMsg='认到的是'+cname(S.phys[other[0]])+'子，本端执'+cname(me)+'，不会入账';
+    return;
+  }
+  let k=mine[0];
+  if(mine.length>1){
+    // 按强度分挑最有把握的那颗：亮度差大、且圆区被填满的优先
+    k=mine.reduce((a,b)=>(S.score[b]||0)>(S.score[a]||0)?b:a, mine[0]);
+    S.pendMsg='同时认到 '+mine.length+' 颗，已取最明确的一颗 ('+(k%N)+','+((k/N)|0)+')';
+  }
+  doPlace(k%N,(k/N)|0);
+}
+function calibrateEmpty(){
+  if(!S.cur){ setHint('还没取到画面，先开启摄像头并框选好棋盘'); return; }
+  S.ref=Float32Array.from(S.cur);
+  S.phys.fill(0); S.cand.fill(0); S.candN.fill(0); S.physCount=0;
+  setHint('已记录空盘基准，可以开始落子了');
+  syncUI();
+}
+
+/* ============================================================
+   6.6) 对局同步
+   ------------------------------------------------------------
+   优先走 WebSocket（同一台服务器中继，可跨机器）；
+   页面不是由服务器提供、或连不上时，退回同源 BroadcastChannel，
+   这样同机双窗口在没起服务的情况下仍能玩。两条通道互斥，不会重复投递。
+   ============================================================ */
+const Net=(()=>{
+  let ws=null, bc=null, tries=0, timer=null, stopped=false;
+  const wsURL=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  const canWS=(location.protocol==='http:'||location.protocol==='https:')&&'WebSocket' in window;
+
+  function handle(m){
+    if(!m||m.seat===S.seat) return;
+    if(IS_PROJ) return;          // 输出窗只做渲染，不参与对局
+    S.peerSeen=performance.now(); S.peerSeat=m.seat;
+    switch(m.t){
+      case 'move':
+        if(m.ply===S.moves.length && at(m.i,m.j)===0 && m.c===S.turn){
+          place(m.i,m.j); tryCommitPending();
+        }else if(m.ply>S.moves.length){ send({t:'req'}); }
+        break;
+      case 'undo': if(S.moves.length>m.ply) undo(); break;
+      case 'reset': newBoard(); syncUI(); break;
+      case 'hello': case 'req':
+        send({t:'state', moves:S.moves, N:S.N, off:S.off}); break;
+      case 'state': applyState(m); break;
+      case 'frame': {
+        const rv=document.getElementById('remoteView');
+        if(rv&&m.d){ rv.src=m.d; S.remoteAt=performance.now(); S.remoteLag=Date.now()-(m.ts||0); }
+        break;
+      }
+      case 'ping': send({t:'pong'}); break;
+      case 'pong': break;
+    }
+  }
+  function send(m){
+    m.seat=S.seat;
+    if(ws&&ws.readyState===1){ try{ ws.send(JSON.stringify(m)); }catch(e){} return; }
+    if(bc){ try{ bc.postMessage(m); }catch(e){} }
+  }
+  function openBC(){
+    if(bc||!('BroadcastChannel' in window)) return;
+    try{
+      bc=new BroadcastChannel('aruco-gomoku');
+      bc.onmessage=e=>handle(e.data);
+      S.netMode='bc';
+    }catch(e){ bc=null; }
+  }
+  function closeBC(){ if(bc){ try{bc.close();}catch(e){} bc=null; } }
+  function connect(){
+    if(stopped||!canWS) return;
+    let sock;
+    try{ sock=new WebSocket(wsURL); }catch(e){ retry(); return; }
+    ws=sock;
+    sock.onopen=()=>{
+      tries=0; closeBC(); S.netMode='ws';
+      send({t:'hello'}); updateStatus();
+    };
+    sock.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } handle(m); };
+    sock.onclose=()=>{ if(ws===sock){ ws=null; S.netMode=bc?'bc':'off'; updateStatus(); retry(); } };
+    sock.onerror=()=>{};
+  }
+  function retry(){
+    if(stopped) return;
+    tries++;
+    if(tries>=2) openBC();          // 连不上服务器就退回同机广播
+    clearTimeout(timer);
+    timer=setTimeout(connect, Math.min(8000, 600*Math.pow(1.7,Math.min(tries,6))));
+  }
+  if(canWS) connect(); else openBC();
+  return {send, get mode(){ return S.netMode; },
+          get ok(){ return (ws&&ws.readyState===1)||!!bc; }};
+})();
+function applyState(m){
+  if(m.N&&m.N!==S.N){ S.N=m.N; document.getElementById('selN').value=m.N; allocStones(); }
+  if(typeof m.off==='number'){
+    S.off=m.off;
+    document.getElementById('rngOff').value=m.off;
+    document.getElementById('offVal').textContent=m.off.toFixed(2);
+  }
+  newBoard();
+  for(const mv of m.moves){ S.board[mv[1]*S.N+mv[0]]=mv[2]; S.moves.push(mv); }
+  S.turn = S.moves.length ? (S.moves[S.moves.length-1][2]===1?2:1) : 1;
+  const last=S.moves[S.moves.length-1];
+  if(last){ const w=findWin(last[0],last[1],last[2]); if(w){ S.winner=last[2]; S.winLine=w; } }
+  syncUI(); tryCommitPending();
+}
+/** 统一的落子出口：本地生效 + 广播 */
+function doPlace(i,j){
+  if(S.turn!==MY()){ setHint('现在轮到对方走'); return false; }
+  const c=S.turn;
+  if(!place(i,j)) return false;
+  Net.send({t:'move', i, j, c, ply:S.moves.length-1});
+  return true;
+}
+function doUndo(){
+  if(!S.moves.length) return;
+  undo();
+  Net.send({t:'undo', ply:S.moves.length});
+}
+Net.send({t:'hello'});
+setInterval(()=>Net.send({t:'ping'}),2500);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) Net.send({t:'ping'}); });
+window.addEventListener('focus',()=>Net.send({t:'ping'}));
+
+/* ============================================================
+   7) 绘制
+   ============================================================ */
+/** 调试用的标记框在视频坐标里，云台开时要一起变换过去 */
+function dbg2canvas(p){
+  if(G.on&&G.Hv2o){
+    const dpr=overlay.width/G.W, q=applyH(G.Hv2o,p[0],p[1]);
+    return [q[0]*dpr,q[1]*dpr];
+  }
+  return v2c(p);
+}
+/** 标定界面：四个手柄 + 按当前标定推出的棋盘预览网格 */
+function drawCalib(){
+  const N=S.N;
+  const V=q=>v2c([q[0]*VW,q[1]*VH]);
+  const quad=S.cal.pts.map(V);
+  const dpr=window.devicePixelRatio||1;
+  // 框外压暗
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,.45)';
+  ctx.beginPath();
+  ctx.rect(0,0,overlay.width,overlay.height);
+  ctx.moveTo(quad[0][0],quad[0][1]);
+  for(let k=1;k<4;k++) ctx.lineTo(quad[k][0],quad[k][1]);
+  ctx.closePath(); ctx.fill('evenodd');
+  ctx.restore();
+  // 预览网格：把标定单应算出来的格点画上去，用来核对是否压在真实投影格线上
+  const Hp=homography([[0,0],[1,0],[1,1],[0,1]],S.cal.pts.map(q=>[q[0]*VW,q[1]*VH]));
+  if(Hp){
+    const P=(i,j)=>v2c(applyH(Hp,i/(N-1),j/(N-1)));
+    ctx.save();
+    ctx.strokeStyle='rgba(76,154,255,.85)';
+    ctx.lineWidth=1.2*dpr;
+    ctx.beginPath();
+    for(let i=0;i<N;i++){
+      let p=P(i,0); ctx.moveTo(p[0],p[1]);
+      for(let j=1;j<N;j++){ p=P(i,j); ctx.lineTo(p[0],p[1]); }
+      p=P(0,i); ctx.moveTo(p[0],p[1]);
+      for(let j=1;j<N;j++){ p=P(j,i); ctx.lineTo(p[0],p[1]); }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 四个手柄
+  const names=['左上','右上','右下','左下'];
+  ctx.save();
+  ctx.font=(13*dpr)+'px sans-serif'; ctx.textAlign='center';
+  quad.forEach((p,k)=>{
+    const on=k===S.cal.sel, r=(on?11:8)*dpr;
+    ctx.fillStyle=on?'#f0b429':'#4c9aff';
+    ctx.beginPath(); ctx.arc(p[0],p[1],r,0,7); ctx.fill();
+    ctx.strokeStyle='#000'; ctx.lineWidth=1.5*dpr; ctx.stroke();
+    ctx.fillStyle='#fff';
+    ctx.fillText(names[k],p[0],p[1]-r-5*dpr);
+  });
+  ctx.restore();
+}
+
+function drawScene(){
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  if(S.cal.on&&VW){ drawCalib(); return; }
+  if(S.roi.on){ drawRoi(); if(S.roi.edit) return; }
+  if(S.debug&&S.dbgQuads.length){
+    ctx.lineWidth=2*(window.devicePixelRatio||1);
+    ctx.strokeStyle='#f0b429';
+    for(const q of S.dbgQuads){
+      ctx.beginPath();
+      q.forEach((p,i)=>{const c=dbg2canvas(p); i?ctx.lineTo(c[0],c[1]):ctx.moveTo(c[0],c[1]);});
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+  /* 识别调试：把采样点直接画在摄像头画面上。
+     点没落在交叉点上 → 标定偏了；落对了却不变色 → 阈值或基准的问题 */
+  if(S.debug&&VW&&VH&&(S.screenGrid||S.cal.ok)){
+    const Hc=S.screenGrid?null:calH();
+    if(Hc||S.screenGrid){
+      const N=S.N, dpr=window.devicePixelRatio||1;
+      const SP=(i,j)=> Hc ? v2c(applyH(Hc,i/(N-1),j/(N-1))) : v2c(screenToVideo(i,j));
+      const a=SP(0,0), b=SP(1,0);
+      const rr=Math.max(3,Math.hypot(b[0]-a[0],b[1]-a[1])*0.30);
+      for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+        const q=SP(i,j);
+        const st=S.phys?S.phys[j*N+i]:0;
+        ctx.beginPath(); ctx.arc(q[0],q[1],rr,0,7);
+        ctx.strokeStyle = st===1?'#00e0ff' : st===2?'#ff4df0' : 'rgba(240,180,41,.55)';
+        ctx.lineWidth=(st?2.2:1)*dpr; ctx.stroke();
+      }
+    }
+  }
+  if(!S.H&&!S.fixed.on) return;
+  const P=PT;
+  const N=S.N;
+  const cell=Math.hypot(P(1,0)[0]-P(0,0)[0],P(1,0)[1]-P(0,0)[1]);
+  /* 透视下格子近大远小（同一盘可差 1.5 倍），
+     凡是跟单个交叉点相关的尺寸都要用该点的局部格宽，不能用全局值 */
+  const LC=(i,j)=>{
+    const a=P(i,j), b=P(i<N-1?i+1:i-1,j), c=P(i,j<N-1?j+1:j-1);
+    return (Math.hypot(b[0]-a[0],b[1]-a[1])+Math.hypot(c[0]-a[0],c[1]-a[1]))/2;
+  };
+
+  /* 棋盘区之外全部遮黑。画在 overlay 上而不是用 CSS 裁剪：
+     这样对本地视频和远端图像同样生效，也不受 ROI 那层变换影响。
+     四角用 P() 取，所以固定棋盘下是正方形、标记跟踪下会跟着透视走。 */
+  if(S.mask.on&&!S.roi.edit){
+    const pd=S.mask.pad;
+    const q=[P(-pd,-pd),P(N-1+pd,-pd),P(N-1+pd,N-1+pd),P(-pd,N-1+pd)];
+    if(q.every(pt=>isFinite(pt[0])&&isFinite(pt[1]))){
+      ctx.save();
+      ctx.fillStyle='#000';
+      ctx.beginPath();
+      ctx.rect(0,0,overlay.width,overlay.height);
+      ctx.moveTo(q[0][0],q[0][1]);
+      for(let k=1;k<4;k++) ctx.lineTo(q[k][0],q[k][1]);
+      ctx.closePath();
+      ctx.fill('evenodd');
+      ctx.restore();
+    }
+  }
+
+  // 只画线，不铺底色
+  ctx.save();
+  ctx.globalAlpha=S.opacity;
+  const LINE=S.lineLight?'rgba(245,238,220,.95)':'rgba(32,22,10,.92)';
+  const DOT =S.lineLight?'rgba(255,250,235,.98)':'rgba(28,18,8,.96)';
+  ctx.strokeStyle=LINE;
+  ctx.lineWidth=Math.max(1,cell*0.035);
+  ctx.beginPath();
+  for(let i=0;i<N;i++){
+    let p=P(i,0); ctx.moveTo(p[0],p[1]);
+    for(let j=1;j<N;j++){p=P(i,j); ctx.lineTo(p[0],p[1]);}
+    p=P(0,i); ctx.moveTo(p[0],p[1]);
+    for(let j=1;j<N;j++){p=P(j,i); ctx.lineTo(p[0],p[1]);}
+  }
+  ctx.stroke();
+  // 外框加粗
+  ctx.lineWidth=Math.max(1.4,cell*0.06);
+  ctx.beginPath();
+  [[0,0],[N-1,0],[N-1,N-1],[0,N-1]].forEach((c,i)=>{const p=P(c[0],c[1]); i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);});
+  ctx.closePath(); ctx.stroke();
+  // 星位
+  const stars = N===19?[3,9,15]:N===15?[3,7,11]:[3,6,9];
+  ctx.fillStyle=DOT;
+  for(const a of stars) for(const b of stars){
+    const p=P(a,b);
+    ctx.beginPath(); ctx.arc(p[0],p[1],Math.max(1.5,LC(a,b)*0.09),0,7); ctx.fill();
+  }
+  ctx.restore();
+
+  // 棋子
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const k=j*N+i, c=S.board[k];
+    if(!c) continue;
+    /* 只跳过"本方颜色"的实体子。若对对方棋子也跳过，会形成回环：
+       投出虚拟子 → 摄像头拍到 → 判定为实体 → 停止绘制 → 拍不到 → 又绘制，来回闪烁 */
+    if(S.phys && S.phys[k]===c && c===MY()) continue;
+    // 本方棋子是桌面上的实体，投一个实心图形上去会盖住真棋子，只画个环确认已录入
+    if(S.hideOwn && c===MY() && S.seat!=='solo'){ drawOwnRing(i,j,LC(i,j)); continue; }
+    drawStone(i,j,c,LC(i,j));
+  }
+  // 认到了但还没入账的实体子（比如没轮到你）→ 虚线圈提示
+  if(S.phys&&S.showPending) for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const k=j*N+i;
+    if(S.phys[k]&&!S.board[k]){
+      const p=P(i,j), lc=LC(i,j);
+      ctx.save();
+      ctx.setLineDash([lc*0.12,lc*0.1]);
+      ctx.strokeStyle='rgba(240,180,41,.95)';
+      ctx.lineWidth=Math.max(1.4,lc*0.06);
+      ctx.beginPath(); ctx.arc(p[0],p[1],lc*0.46,0,7); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // 最后一手
+  if(S.moves.length){
+    const [li,lj]=S.moves[S.moves.length-1];
+    const p=P(li,lj), lc=LC(li,lj);
+    ctx.strokeStyle='#ff4d4f'; ctx.lineWidth=Math.max(1.5,lc*0.07);
+    ctx.beginPath(); ctx.arc(p[0],p[1],lc*0.2,0,7); ctx.stroke();
+  }
+  // 胜利连线
+  if(S.winLine){
+    const a=P(S.winLine[0][0],S.winLine[0][1]), b=P(S.winLine[4][0],S.winLine[4][1]);
+    ctx.strokeStyle='rgba(255,64,64,.9)';
+    ctx.lineWidth=Math.max(2,cell*0.12);
+    ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  }
+  // 悬停预览
+  if(hoverIJ&&!S.winner&&at(hoverIJ[0],hoverIJ[1])===0&&S.turn===MY()){
+    ctx.save(); ctx.globalAlpha=.45;
+    drawStone(hoverIJ[0],hoverIJ[1],S.turn,LC(hoverIJ[0],hoverIJ[1]));
+    ctx.restore();
+  }
+}
+/** 本方棋子：只画一个细环，不遮挡桌上的实体棋子 */
+function drawOwnRing(i,j,cell){
+  const p=PT(i,j);
+  ctx.save();
+  ctx.strokeStyle=S.lineLight?'rgba(120,220,255,.95)':'rgba(0,90,160,.9)';
+  ctx.lineWidth=Math.max(1.5,cell*0.07);
+  ctx.beginPath(); ctx.arc(p[0],p[1],cell*0.40,0,7); ctx.stroke();
+  ctx.restore();
+}
+function drawStone(i,j,c,cell){
+  /* 必须走 PT()：固定棋盘模式下 S.H 为 null，直接调 ij2video 会抛异常，
+     导致格线画得出来、棋子一颗都画不出来 */
+  const pts=[]; const r=0.44;
+  for(let k=0;k<20;k++){
+    const a=k/20*Math.PI*2;
+    pts.push(PT(i+Math.cos(a)*r,j+Math.sin(a)*r));
+  }
+  ctx.beginPath();
+  pts.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+  ctx.closePath();
+  const ctr=PT(i,j);
+  const gr=ctx.createRadialGradient(ctr[0]-cell*.13,ctr[1]-cell*.15,cell*.03,ctr[0],ctr[1],cell*.5);
+  if(c===1){gr.addColorStop(0,'#6d6d6d');gr.addColorStop(1,'#080808');}
+  else{gr.addColorStop(0,'#ffffff');gr.addColorStop(1,'#bfbfbf');}
+  ctx.fillStyle=gr; ctx.fill();
+  ctx.strokeStyle=c===1?'rgba(0,0,0,.6)':'rgba(90,90,90,.55)';
+  ctx.lineWidth=Math.max(.6,cell*0.02); ctx.stroke();
+}
+
+/* ============================================================
+   7.5) ROI 直播：裁一块画面直接发给对端
+   ============================================================ */
+const cap=document.createElement('canvas');
+const capCtx=cap.getContext('2d');
+let roiTimer=null;
+
+function roiQuadCanvas(){        // ROI 四角在画布坐标中的位置
+  return S.roi.q.map(q=>v2c([q[0]*VW,q[1]*VH]));
+}
+function drawRoi(){
+  if(!S.roi.on||!VW) return;
+  if(S.roi.fill&&!S.roi.edit) return;   // 整屏即 ROI，不必再画框
+  const quad=roiQuadCanvas();
+  const dpr=window.devicePixelRatio||1;
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,.45)';
+  ctx.beginPath();
+  ctx.rect(0,0,overlay.width,overlay.height);
+  ctx.moveTo(quad[0][0],quad[0][1]);
+  for(let k=1;k<4;k++) ctx.lineTo(quad[k][0],quad[k][1]);
+  ctx.closePath(); ctx.fill('evenodd');
+  ctx.strokeStyle=S.roi.edit?'#4c9aff':'rgba(76,154,255,.75)';
+  ctx.lineWidth=2*dpr;
+  ctx.beginPath();
+  ctx.moveTo(quad[0][0],quad[0][1]);
+  for(let k=1;k<4;k++) ctx.lineTo(quad[k][0],quad[k][1]);
+  ctx.closePath(); ctx.stroke();
+  if(S.roi.edit){
+    const names=['左上','右上','右下','左下'];
+    ctx.font=(13*dpr)+'px sans-serif'; ctx.textAlign='center';
+    quad.forEach((p,k)=>{
+      const on=k===S.roi.sel, rr=(on?11:8)*dpr;
+      ctx.fillStyle=on?'#f0b429':'#4c9aff';
+      ctx.beginPath(); ctx.arc(p[0],p[1],rr,0,7); ctx.fill();
+      ctx.strokeStyle='#000'; ctx.lineWidth=1.5*dpr; ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.fillText(names[k],p[0],p[1]-rr-5*dpr);
+    });
+  }
+  ctx.restore();
+}
+/** 抓取 ROI → JPEG → 发给对端 */
+function sendRoiFrame(){
+  if(!S.roi.on||!S.running||video.readyState<2||!VW) return;
+  const r=S.roi;
+  const sx=Math.max(0,VW*r.x), sy=Math.max(0,VH*r.y);
+  const sw=Math.min(VW-sx,VW*r.w), sh=Math.min(VH-sy,VH*r.h);
+  if(sw<8||sh<8) return;
+  const outW=Math.min(640,Math.round(sw));
+  const outH=Math.max(8,Math.round(outW*sh/sw));
+  if(cap.width!==outW||cap.height!==outH){ cap.width=outW; cap.height=outH; }
+  capCtx.drawImage(video,sx,sy,sw,sh,0,0,outW,outH);
+  let d;
+  try{ d=cap.toDataURL('image/jpeg',S.roiQ); }catch(e){ return; }
+  S.upBytes+=d.length;
+  Net.send({t:'frame', d, ts:Date.now()});
+}
+/** 把 ROI 区域铺满 stage：纯缩放平移，不需要任何标记 */
+let roiCss='';
+/* 屏幕 CSS 坐标 = ks( video_px * sc + (left,top) )；记下来好做反解 */
+let fitInfo={active:false, inv:null};
+function roiFit(){
+  const z=S.roi.zoom||1, px=S.roi.panX||0, py=S.roi.panY||0;
+  /* 标定时必须让视频回到未变换的 contain 显示，
+     否则手柄的画布坐标换算不回真实视频像素 */
+  if(S.cal.on){
+    if(roiCss){ video.style.width=''; video.style.height=''; video.style.objectFit='';
+                video.style.transform=''; video.style.clipPath=''; roiCss=''; }
+    if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH;
+    fitInfo.active=false;
+    return;
+  }
+  const rv=document.getElementById('remoteView');
+  if(document.body.classList.contains('viewremote')){
+    if(rv&&rv.naturalWidth>1) stage.style.aspectRatio=rv.naturalWidth+'/'+rv.naturalHeight;
+    // 远端画面同样支持手动放大
+    const kh2=ksBuild().css;
+    const ks2=kh2?('matrix3d('+[kh2[0],kh2[3],0,kh2[6],
+                                kh2[1],kh2[4],0,kh2[7],
+                                0,0,1,0,
+                                kh2[2],kh2[5],0,1].join(',')+') '):'';
+    rv.style.transformOrigin='0 0';
+    const zt=(z===1&&!px&&!py)?'':
+      'translate('+(px*100).toFixed(2)+'%,'+(py*100).toFixed(2)+'%) '+
+      'translate(50%,50%) scale('+z.toFixed(3)+') translate(-50%,-50%)';
+    rv.style.transform=ks2?(ks2+zt):(zt||'');
+    if(roiCss){ video.style.width=''; video.style.height=''; video.style.objectFit='';
+                video.style.transform=''; video.style.clipPath=''; roiCss=''; }
+    return;
+  }
+  if(rv) rv.style.transform='';
+  const useRoi=S.roi.on&&S.roi.fill&&!S.cal.on;
+  /* 梯形校正必须列入判断：否则「ROI 关 + 缩放 1 + 无平移」时这里直接返回，
+     矩阵只作用到棋盘格、视频纹丝不动，表现就是"点了校正没反应" */
+  if(!VW||!VH||(!useRoi&&z===1&&!px&&!py&&!ksActive())){
+    if(roiCss){ video.style.width=''; video.style.height=''; video.style.objectFit='';
+                video.style.transform=''; video.style.clipPath=''; roiCss='';
+                if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH; }
+    fitInfo.active=false;
+    return;
+  }
+  const r=stage.getBoundingClientRect();
+  if(!(r.width>1&&r.height>1)) return;
+  const d=curDpr||1;
+  if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH;
+  /* 把 ROI 四边形直接映射到屏幕上画格线的那个方框：
+     四个角拖到实体棋盘四角，格线就自动压上去，框选和对齐是同一个动作。
+     投影歪了也没关系——这是完整的单应变换，不是缩放平移。 */
+  const f=fixedRect(), side=f.step*Math.max(1,S.N-1);
+  const dst=[[f.x/d,f.y/d],[(f.x+side)/d,f.y/d],
+             [(f.x+side)/d,(f.y+side)/d],[f.x/d,(f.y+side)/d]];
+  const src=S.roi.q.map(q=>[q[0]*VW,q[1]*VH]);
+  const Hq=homography(src,dst);
+  if(!Hq){ fitInfo.active=false; return; }
+  fitInfo={active:true, inv:invH(Hq)};
+  const kh=ksBuild().css;
+  const m3=(h)=>'matrix3d('+[h[0],h[3],0,h[6], h[1],h[4],0,h[7], 0,0,1,0, h[2],h[5],0,1].join(',')+')';
+  const css=(kh?m3(kh)+' ':'')+m3(Hq);
+  // 四边形之外裁掉；clip-path 作用于变换前的本地坐标系，正好是视频原始像素
+  const clip='polygon('+src.map(q=>q[0].toFixed(1)+'px '+q[1].toFixed(1)+'px').join(',')+')';
+  if(css!==roiCss){
+    video.style.width=VW+'px'; video.style.height=VH+'px';
+    video.style.objectFit='fill'; video.style.transformOrigin='0 0';
+    video.style.transform=css; video.style.clipPath=clip; roiCss=css;
+  }
+}
+function roiRestart(){
+  if(roiTimer) clearInterval(roiTimer);
+  roiTimer=S.roi.on?setInterval(sendRoiFrame,Math.round(1000/S.roiFps)):null;
+}
+setInterval(()=>{ S.upRate=Math.round(S.upBytes/1024); S.upBytes=0; },1000);
+
+/* ---- 拖拽标定手柄 ---- */
+let calDrag=-1;
+function calPointerDown(e,cx,cy){
+  if(!S.cal.on||!VW) return false;
+  const tol=22*(window.devicePixelRatio||1);
+  let best=-1,bd=tol;
+  S.cal.pts.forEach((q,k)=>{
+    const p=v2c([q[0]*VW,q[1]*VH]);
+    const d=Math.hypot(cx-p[0],cy-p[1]);
+    if(d<bd){ bd=d; best=k; }
+  });
+  if(best<0) return false;
+  calDrag=best; S.cal.sel=best;
+  document.querySelectorAll('.calcorner').forEach(x=>
+    x.classList.toggle('on',+x.dataset.k===best));
+  overlay.setPointerCapture(e.pointerId);
+  return true;
+}
+function calPointerMove(cx,cy){
+  if(calDrag<0) return;
+  const v=c2v(cx,cy);
+  S.cal.pts[calDrag]=[Math.min(1,Math.max(0,v[0]/VW)), Math.min(1,Math.max(0,v[1]/VH))];
+  calMark();
+}
+
+/* ---- 拖拽调整 ROI：四角可独立拖成任意四边形 ---- */
+let roiDrag=null;
+function roiPointerDown(e,cx,cy){
+  if(!S.roi.on||!S.roi.edit||!VW) return false;
+  const quad=roiQuadCanvas();
+  const tol=22*(window.devicePixelRatio||1);
+  let best=-1,bd=tol;
+  quad.forEach((p,k)=>{ const d=Math.hypot(cx-p[0],cy-p[1]); if(d<bd){bd=d;best=k;} });
+  if(best>=0){
+    S.roi.sel=best;
+    roiDrag={mode:'corner',k:best};
+    overlay.setPointerCapture(e.pointerId);
+    return true;
+  }
+  // 点在四边形内部 → 整体平移
+  let inside=false;
+  for(let a=0,b=3;a<4;b=a++){
+    const pa=quad[a], pb=quad[b];
+    if((pa[1]>cy)!==(pb[1]>cy) && cx < (pb[0]-pa[0])*(cy-pa[1])/(pb[1]-pa[1])+pa[0]) inside=!inside;
+  }
+  if(!inside) return false;
+  const v=c2v(cx,cy);
+  roiDrag={mode:'move', px:v[0]/VW, py:v[1]/VH, q:S.roi.q.map(p=>p.slice())};
+  overlay.setPointerCapture(e.pointerId);
+  return true;
+}
+function roiPointerMove(cx,cy){
+  if(!roiDrag) return;
+  const v=c2v(cx,cy), nx=v[0]/VW, ny=v[1]/VH;
+  if(roiDrag.mode==='corner'){
+    S.roi.q[roiDrag.k]=[Math.min(1.5,Math.max(-0.5,nx)), Math.min(1.5,Math.max(-0.5,ny))];
+  }else{
+    const dx=nx-roiDrag.px, dy=ny-roiDrag.py;
+    S.roi.q=roiDrag.q.map(p=>[p[0]+dx,p[1]+dy]);
+  }
+  syncRoiRect(); roiCss='';
+}
+/** 传图和"用 ROI 填入"仍需要一个矩形，取四边形的包围盒 */
+function syncRoiRect(){
+  const xs=S.roi.q.map(p=>p[0]), ys=S.roi.q.map(p=>p[1]);
+  S.roi.x=Math.min(...xs); S.roi.y=Math.min(...ys);
+  S.roi.w=Math.max(0.05,Math.max(...xs)-S.roi.x);
+  S.roi.h=Math.max(0.05,Math.max(...ys)-S.roi.y);
+}
+
+/* ============================================================
+   7.8) 投影输出窗口
+   ------------------------------------------------------------
+   控制窗口保留面板，另开一个 ?view=proj 的纯输出窗口拖到投影仪。
+   两窗同源，用独立的 BroadcastChannel 单向推送渲染状态；
+   刻意不复用对局那条通道——那条通道会忽略同座位的消息。
+   ============================================================ */
+const IS_PROJ = new URLSearchParams(location.search).get('view')==='proj';
+let projWin=null, projCh=null, projTimer=null;
+try{ projCh=new BroadcastChannel('aruco-proj'); }catch(e){}
+
+function projPayload(){
+  return {t:'proj', seat:S.seat, N:S.N,
+    board:Array.from(S.board), moves:S.moves,
+    turn:S.turn, winner:S.winner, winLine:S.winLine,
+    fixedSize:S.fixed.size, lineLight:S.lineLight, hideOwn:S.hideOwn,
+    mask:{on:S.mask.on,pad:S.mask.pad},
+    ks:{on:S.ks.on,c:S.ks.c},
+    phys:S.phys?Array.from(S.phys):null};
+}
+function projPush(){ if(projCh){ try{ projCh.postMessage(projPayload()); }catch(e){} } }
+function projStart(){
+  if(projTimer) clearInterval(projTimer);
+  projTimer=setInterval(projPush,120);      // 8Hz 足够，棋盘不是动画
+  projPush();
+}
+function projURL(){
+  const u=new URL(location.href);
+  u.searchParams.set('view','proj');
+  u.searchParams.set('seat',S.seat);
+  u.searchParams.delete('v');
+  return u.toString();
+}
+function refreshProjLink(){
+  const a=document.getElementById('lnkProj');
+  if(a) a.href=projURL();
+}
+function openProjWindow(){
+  /* 关键：带 width/height 参数时 Chrome 按"弹出窗口"处理，极易被拦；
+     不带参数则是开新标签页，用户手势触发基本不会被拦。
+     标签页可以直接拖出来变成独立窗口，再拖到投影仪那块屏。 */
+  try{ projWin=window.open(projURL(),'aruco-proj-'+S.seat); }catch(e){ projWin=null; }
+  if(!projWin||projWin.closed){
+    const a=document.getElementById('lnkProj');
+    if(a){ a.style.background='#4c9aff'; a.style.color='#06121f'; a.style.fontWeight='600'; }
+    setHint('浏览器拦下了自动开窗 —— 点面板里那个高亮的「↗ 打开投影窗口」链接即可');
+    return false;
+  }
+  return true;
+}
+function applyProj(m){
+  if(!m||m.t!=='proj'||m.seat!==S.seat) return;
+  if(m.N!==S.N){ S.N=m.N; newBoard(); }
+  S.board=Int8Array.from(m.board);
+  S.moves=m.moves||[];
+  S.turn=m.turn; S.winner=m.winner; S.winLine=m.winLine;
+  S.fixed.size=m.fixedSize; S.lineLight=m.lineLight; S.hideOwn=m.hideOwn;
+  S.mask.on=m.mask.on; S.mask.pad=m.mask.pad;
+  S.ks.on=m.ks.on; S.ks.c=m.ks.c; ksMark();
+  S.phys = m.phys&&m.phys.length===S.N*S.N ? Int8Array.from(m.phys) : new Int8Array(S.N*S.N);
+}
+if(IS_PROJ){
+  document.body.classList.add('projview');
+  S.fixed.on=true; S.roi.on=false; S.running=false; S.detectStones=false;
+  if(projCh) projCh.onmessage=e=>applyProj(e.data);
+}else{
+  /* 控制窗常驻推送：原来只在点「投影模式」时启动，
+     控制窗一刷新定时器就没了，投影窗会停在旧画面。
+     本地广播 8Hz，开销可忽略，常开最省心。 */
+  projStart();
+}
+
+/* ============================================================
+   8) 主循环
+   ============================================================ */
+let hoverIJ=null, lastDet=0, fpsT=0, fpsN=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(S.running&&video.readyState>=2&&ts-lastDet>66){
+    lastDet=ts;
+    if(!VW&&video.videoWidth){VW=video.videoWidth;VH=video.videoHeight;stage.style.aspectRatio=VW+'/'+VH;layout();}
+    const pw=Math.min(S.procW,VW||S.procW), ph=Math.round(pw*(VH||360)/(VW||S.procW));
+    if(proc.width!==pw||proc.height!==ph){proc.width=pw;proc.height=ph;}
+    if(S.fixed.on&&!S.detectStones&&!S.cal.on){ fpsN++; if(ts-fpsT>500){S.fps=Math.round(fpsN*1000/(ts-fpsT));fpsN=0;fpsT=ts;} }
+    else{
+    pctx.drawImage(video,0,0,pw,ph);
+    let img=null;
+    try{ img=pctx.getImageData(0,0,pw,ph); }catch(e){}
+    if(img){
+      procK=(VW||pw)/pw;
+      if(S.fixed.on){
+        S.detCount=0; S.dbgQuads=[];
+        // 不找标记，但棋子识别要用最新灰度
+        try{ Det.prepareGray(img); }catch(e){}
+      }
+      else if(!S.locked){
+        // 检测结果立刻换算到视频坐标，两级分辨率才好比较
+        const toVideo=(ms,w)=>{
+          const k=(VW||w)/w;
+          return ms.map(m=>({center:[m.center[0]*k,m.center[1]*k], quad:m.quad.map(q=>[q[0]*k,q[1]*k])}));
+        };
+        let markers=[], usedW=pw;
+        try{ markers=toVideo(Det.detect(img),pw); }catch(e){}
+        /* 大俯角下远端两个标记会被透视压扁到 10px 以下，低分辨率必然漏检；
+           只有凑不齐 4 个时才升分辨率重试，常态不付这份开销 */
+        if(markers.length<4 && S.procRetry && VW>pw){
+          const hw=Math.min(VW,Math.round(pw*1.7)), hh=Math.round(hw*(VH||360)/(VW||hw));
+          if(proc2.width!==hw||proc2.height!==hh){ proc2.width=hw; proc2.height=hh; }
+          p2ctx.drawImage(video,0,0,hw,hh);
+          try{
+            const m2=toVideo(Det.detect(p2ctx.getImageData(0,0,hw,hh)),hw);
+            usedW=hw;                       // Det 内部灰度已换成高分辨率那张
+            if(m2.length>markers.length) markers=m2;
+          }catch(e){}
+          S.retried++;
+        }
+        procK=(VW||usedW)/usedW;
+        S.dbgQuads=markers.map(m=>m.quad);
+        S.detCount=markers.length;
+        if(markers.length>=4){
+          updatePose(markers.slice(0,4).map(m=>m.center));
+          S.lastSeenAt=ts;
+        }
+      }else{
+        try{ Det.prepareGray(img); }catch(e){}
+      }
+      if(S.H||S.cal.ok||(S.screenGrid&&S.fixed.on)||S.absMode){
+        try{ updateStones(); S.lastErr=''; }
+        catch(e){ S.lastErr=String(e&&e.message||e); }   // 吞掉异常会让"没反应"完全无法排查
+      }
+    }
+    fpsN++;
+    if(ts-fpsT>500){ S.fps=Math.round(fpsN*1000/(ts-fpsT)); fpsN=0; fpsT=ts; }
+    }
+  }
+  gimbalUpdate();
+  roiFit();
+  drawScene();
+}
+requestAnimationFrame(loop);
+
+/* ============================================================
+   9) 交互
+   ============================================================ */
+function pickIJ(ev){
+  const r=overlay.getBoundingClientRect();
+  const dpr=overlay.width/r.width;
+  const cx=(ev.clientX-r.left)*dpr, cy=(ev.clientY-r.top)*dpr;
+  const ij=canvasToIJ(cx,cy); if(!ij) return null;
+  const i=Math.round(ij[0]), j=Math.round(ij[1]);
+  if(i<0||j<0||i>=S.N||j>=S.N) return null;
+  if(Math.abs(ij[0]-i)>0.55||Math.abs(ij[1]-j)>0.55) return null;
+  return [i,j];
+}
+function evCanvas(e){
+  const r=overlay.getBoundingClientRect(), k=overlay.width/r.width;
+  return [(e.clientX-r.left)*k,(e.clientY-r.top)*k];
+}
+overlay.addEventListener('pointermove',e=>{
+  if(calDrag>=0){ const c=evCanvas(e); calPointerMove(c[0],c[1]); return; }
+  if(roiDrag){ const c=evCanvas(e); roiPointerMove(c[0],c[1]); return; }
+  if(e.pointerType==='mouse') hoverIJ=(S.H||S.fixed.on)?pickIJ(e):null;
+});
+overlay.addEventListener('pointerup',e=>{
+  if(calDrag>=0){ calDrag=-1; try{overlay.releasePointerCapture(e.pointerId);}catch(_){} saveCfg(); return; }
+  if(roiDrag){ roiDrag=null; try{overlay.releasePointerCapture(e.pointerId);}catch(_){} saveCfg(); }
+});
+overlay.addEventListener('pointerleave',()=>hoverIJ=null);
+overlay.addEventListener('pointerdown',e=>{
+  const c=evCanvas(e);
+  if(calPointerDown(e,c[0],c[1])) return;
+  if(roiPointerDown(e,c[0],c[1])) return;
+  if(!S.H&&!S.fixed.on) return;
+  const ij=pickIJ(e); if(!ij) return;
+  if(doPlace(ij[0],ij[1])) hoverIJ=null;
+});
+
+/* 绑定处理函数时若元素不存在，返回一个哑对象而不是 null，
+   否则 null.onclick 会抛异常，导致这一行之后所有按钮全部绑不上 */
+function el$(id){
+  const e=document.getElementById(id);
+  if(!e) console.warn('[UI] 缺少元素 #'+id);
+  return e||{};
+}
+function tag(el,txt,cls){ el.textContent=txt; el.className='tag'+(cls?' '+cls:''); }
+function setHint(t){
+  hint.textContent=t;
+  // 演示/投影窗一律不显示：这里是行内样式，否则会压过 CSS 的隐藏规则
+  const cl=document.body.classList;
+  const show=t&&!cl.contains('present')&&!cl.contains('projview');
+  hint.style.display=show?'block':'none';
+}
+function updateStatus(){
+  document.getElementById('tagFps').textContent=S.fps;
+  document.getElementById('tagPhys').textContent=S.physCount;
+  tag(document.getElementById('tagCal'), S.ref?'已校准':'未校准', S.ref?'ok':'bad');
+  const pe=document.getElementById('tagPeer');
+  const via=S.netMode==='ws'?'联网':S.netMode==='bc'?'本机':'';
+  if(S.netMode==='off') tag(pe,'服务器未连接','bad');
+  else if(performance.now()-S.peerSeen<70000)
+    tag(pe,via+' · 对方'+(S.peerSeat==='white'?'执白':S.peerSeat==='black'?'执黑':'?'),'ok');
+  else tag(pe,via+' · 等待对方','');
+
+  document.getElementById('tagUp').textContent=S.upRate;
+  const rt=document.getElementById('tagRemote');
+  if(performance.now()-S.remoteAt<2000) tag(rt,'接收中 · '+Math.max(0,S.remoteLag)+'ms','ok');
+  else tag(rt,'无信号','');
+
+  const ld=document.getElementById('tagLastDet');
+  if(ld){
+    const d=S.lastDet;
+    const txt=d?('('+d[0]+', '+d[1]+') '+(d[2]===1?'黑':'白')):'—';
+    tag(ld, txt, d?'ok':'');
+  }
+  const td=document.getElementById('tagDiff');
+  if(td) tag(td, (S.diffN|0)+(S.occluded?' · 判为遮挡':''), S.occluded?'bad':'');
+  const te=document.getElementById('tagErr');
+  if(te) tag(te, S.lastErr||'—', S.lastErr?'bad':'');
+  const pm=document.getElementById('tagPend');
+  if(pm) tag(pm, S.pendMsg||'—', S.pendMsg?'bad':'');
+  const tc=document.getElementById('tagCalib');
+  if(tc) tag(tc, S.cal.on?'标定中·拖动手柄':(S.cal.ok?'已标定':'未标定'),
+               S.cal.on?'':(S.cal.ok?'ok':'bad'));
+  const el=document.getElementById('tagDet');
+  if(S.fixed.on){ tag(el,'固定棋盘','ok'); }
+  else if(S.locked){ tag(el,'已锁定','ok'); }
+  else if(S.flat){ tag(el,'平面模式','ok'); }
+  else if(!S.running){ tag(el,'未开始',''); }
+  else if(S.detCount>=4){ tag(el,'4 / 4 已识别','ok'); }
+  else { tag(el,S.detCount+' / 4','bad'); }
+
+  // 提示条优先级：标记丢失 > 未校准 > 遮挡 > 轮次
+  if(S.cal.on) setHint('拖动四个手柄，对准摄像头画面里投影棋盘的四个角；蓝色预览网格应压在真实格线上');
+  else if(S.roi.on&&S.roi.edit) setHint('拖动四个角对准棋盘的四个角；四角可各自摆放，投影歪了也能贴合');
+  else if(S.fixed.on&&S.running&&!S.roi.on) setHint('点「开启 ROI」再点「调整框选」，把四角对准棋盘');
+  else if(S.fixed.on&&!S.running) setHint('先开启摄像头');
+  else if(S.fixed.on&&S.roi.edit) setHint('拖动框体移动、拖四角缩放，框住桌上的棋盘范围');
+  else if(S.fixed.on) setHint('');
+  else if(S.running&&!S.locked&&!S.fixed.on&&S.detCount<4) setHint('已识别 '+S.detCount+' 个标记，需要 4 个都在画面内');
+  else if(S.running&&S.detectStones&&!S.ref) setHint('先清空棋盘，按「校准空盘」记录基准');
+  else if(S.occluded) setHint('画面大面积变化（手/遮挡），暂停识别');
+  else if(S.winner) setHint('');
+  else if(S.seat!=='solo'&&S.turn!==MY()) setHint('等待对方落子…');
+  else setHint('');
+}
+function syncUI(){
+  // 后台窗口的 setInterval 会被浏览器节流，所以状态一变就立刻推一次
+  if(typeof projTimer!=='undefined'&&projTimer) projPush();
+  const d=document.getElementById('turnDot'), t=document.getElementById('turnTxt');
+  document.getElementById('tagMoves').textContent=S.moves.length;
+  document.getElementById('selSeat').value=S.seat;
+  if(S.winner){
+    d.className='dot '+(S.winner===1?'b':'w');
+    t.innerHTML='<b style="color:var(--ok)">'+(S.winner===1?'黑棋':'白棋')+'五连获胜！</b>';
+  }else{
+    d.className='dot '+(S.turn===1?'b':'w');
+    t.textContent=(S.turn===1?'黑棋':'白棋')+'回合';
+  }
+}
+/** 把已保存的现场参数同步到各控件 */
+function applyCfgToUI(){
+  const set=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
+  const txt=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
+  const btn=(id,on,a,b)=>{const el=document.getElementById(id);
+    if(el){ el.classList.toggle('on',on); el.textContent=on?a:b; }};
+  set('rngZoom',Math.round((S.roi.zoom||1)*100)); txt('zoomVal',Math.round((S.roi.zoom||1)*100));
+  set('rngFixed',Math.round(S.fixed.size*100));   txt('fixVal',Math.round(S.fixed.size*100));
+  set('rngPad',S.mask.pad);                       txt('padVal',(+S.mask.pad).toFixed(1));
+  set('rngTh',S.stoneTh);                         txt('thVal',S.stoneTh);
+  set('rngThW',S.stoneThW);                       txt('thWVal',S.stoneThW);
+  btn('btnPending',S.showPending,'显示待判定圈','待判定圈已关');
+  btn('btnScreenGrid',S.screenGrid,'按屏幕网格识别','用四角标定识别');
+  btn('btnAbsMode',S.absMode,'免基准识别','用空盘基准');
+  document.querySelectorAll('.roicorner').forEach(x=>
+    x.classList.toggle('on',+x.dataset.k===S.roi.sel));
+  if(typeof refreshProjLink==='function') refreshProjLink();
+  btn('btnRoi',S.roi.on,'ROI 已开','开启 ROI');
+  btn('btnRoiFill',S.roi.fill,'ROI 铺满','ROI 不铺满');
+  btn('btnFixed',S.fixed.on,'固定棋盘','跟踪标记');
+  btn('btnMask',S.mask.on,'棋盘外遮黑','显示全画面');
+  btn('btnKs',S.ks.on,'校正中','开启校正');
+  btn('btnHideOwn',S.hideOwn,'本方子只画环','本方子画实心');
+  btn('btnCalib',S.cal.on,'完成标定','标定四角');
+  document.querySelectorAll('.calcorner').forEach(x=>
+    x.classList.toggle('on',+x.dataset.k===S.cal.sel));
+  btn('btnLine',S.lineLight,'线条：亮色','线条：深色');
+  document.querySelectorAll('.kscorner').forEach(x=>
+    x.classList.toggle('on',+x.dataset.k===S.ks.sel));
+  roiRestart();
+}
+loadCfg(); applyCfgToUI();
+if(IS_PROJ){
+  // loadCfg 会把控制窗存的 ROI/摄像头设置读回来，这里必须再压一次
+  S.roi.on=false; S.roi.edit=false; S.fixed.on=true;
+  S.running=false; S.detectStones=false; S.cal.on=false;
+  document.body.classList.remove('hidevid','viewremote','present');
+  document.body.classList.add('projview');
+}
+syncUI(); updateStatus();
+document.getElementById('selSeat').value=S.seat;
+
+document.getElementById('btnStart').onclick=()=>{ S.running?stopCamera():startCamera(); updateStatus(); };
+document.getElementById('camSel').onchange=e=>{
+  if(e.target.value){ localStorage.setItem(camKey(),e.target.value); startCamera(e.target.value); }
+};
+document.getElementById('btnRescan').onclick=async()=>{
+  localStorage.removeItem(camKey());
+  await enumerate();
+  startCamera(pickDevice());
+};
+document.getElementById('camIdx').onchange=()=>{
+  localStorage.removeItem(camKey());
+  if(devices.length) startCamera(pickDevice());
+};
+document.getElementById('btnFlat').onclick=function(){
+  S.flat=!S.flat; this.classList.toggle('on',S.flat);
+  if(S.flat){
+    gimbalOff();
+    if(!VW){ stage.style.aspectRatio='1/1'; layout(); }
+    flatPose(); S.locked=false;
+    document.getElementById('btnLock').classList.remove('on');
+  }else if(!S.running){ S.H=null; S.quad=null; }
+  updateStatus();
+};
+document.getElementById('btnLock').onclick=function(){
+  if(!S.H){ setHint('还没有识别到棋盘，无法锁定'); return; }
+  S.locked=!S.locked; this.classList.toggle('on',S.locked);
+  this.textContent=S.locked?'解除锁定':'锁定棋盘';
+  updateStatus();
+};
+document.getElementById('btnUndo').onclick=doUndo;
+document.getElementById('btnReset').onclick=()=>{ newBoard(); syncUI(); Net.send({t:'reset'}); };
+document.getElementById('selProc').onchange=e=>{ S.procW=+e.target.value; };
+document.getElementById('btnRoi').onclick=function(){
+  S.roi.on=!S.roi.on;
+  this.classList.toggle('on',S.roi.on);
+  this.textContent=S.roi.on?'ROI 已开':'开启 ROI';
+  if(S.roi.on&&G.on){ G.on=false; gimbalOff();          // 云台会给 video 加 CSS 变换，和框选冲突
+    const gb=document.getElementById('btnGimbal');
+    if(gb){ gb.classList.remove('on'); gb.textContent='开启云台'; } }
+  if(!S.roi.on){ S.roi.edit=false;
+    const eb=document.getElementById('btnRoiEdit');
+    eb.classList.remove('on'); eb.textContent='调整框选'; }
+  roiRestart(); updateStatus();
+};
+document.getElementById('btnRoiEdit').onclick=function(){
+  if(!S.roi.on) return;
+  S.roi.edit=!S.roi.edit;
+  this.classList.toggle('on',S.roi.edit);
+  this.textContent=S.roi.edit?'完成调整':'调整框选';
+  // 调框时必须看得到框外，所以临时恢复完整画面
+  if(S.roi.edit){ S._fillWas=S.roi.fill; S.roi.fill=false; }
+  else { S.roi.fill=S._fillWas!==undefined?S._fillWas:true; }
+  roiCss=''; if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH;
+  updateStatus();
+};
+document.getElementById('btnViewRemote').onclick=function(){
+  const on=!document.body.classList.contains('viewremote');
+  document.body.classList.toggle('viewremote',on);
+  this.classList.toggle('on',on);
+  this.textContent=on?'看本地画面':'看远端画面';
+};
+document.getElementById('rngRoiFps').oninput=e=>{
+  S.roiFps=+e.target.value;
+  document.getElementById('roiFpsVal').textContent=e.target.value;
+  roiRestart();
+};
+/* ---- 梯形校正控件 ---- */
+function ksNudge(dx,dy){
+  if(!S.ks.on) return;
+  const st=0.01;
+  const c=S.ks.c[S.ks.sel];
+  c[0]+=dx*st; c[1]+=dy*st;
+  roiCss=''; ksMark();
+}
+document.getElementById('btnKs').onclick=function(){
+  S.ks.on=!S.ks.on;
+  this.classList.toggle('on',S.ks.on);
+  this.textContent=S.ks.on?'校正中':'开启校正';
+  roiCss=''; ksMark();
+};
+document.getElementById('btnKsReset').onclick=()=>{
+  S.ks.c=[[0,0],[0,0],[0,0],[0,0]];
+  roiCss=''; ksMark();
+};
+for(const b of document.querySelectorAll('.kscorner')) b.onclick=function(){
+  S.ks.sel=+this.dataset.k;
+  document.querySelectorAll('.kscorner').forEach(x=>x.classList.remove('on'));
+  this.classList.add('on');
+};
+document.getElementById('ksL').onclick=()=>ksNudge(-1,0);
+document.getElementById('ksR').onclick=()=>ksNudge(1,0);
+document.getElementById('ksU').onclick=()=>ksNudge(0,-1);
+document.getElementById('ksD').onclick=()=>ksNudge(0,1);
+
+function setZoom(z){
+  S.roi.zoom=Math.min(4,Math.max(0.5,z));
+  saveCfg();
+  document.getElementById('rngZoom').value=Math.round(S.roi.zoom*100);
+  document.getElementById('zoomVal').textContent=Math.round(S.roi.zoom*100);
+  roiCss='';
+}
+document.getElementById('btnZoomIn').onclick=()=>setZoom((S.roi.zoom||1)*1.12);
+document.getElementById('btnZoomOut').onclick=()=>setZoom((S.roi.zoom||1)/1.12);
+document.getElementById('btnZoomReset').onclick=()=>{ S.roi.panX=0; S.roi.panY=0; setZoom(1); };
+document.getElementById('rngZoom').oninput=e=>setZoom(e.target.value/100);
+document.getElementById('btnRoiFill').onclick=function(){
+  S.roi.fill=!S.roi.fill; this.classList.toggle('on',S.roi.fill);
+  this.textContent=S.roi.fill?'ROI 铺满':'ROI 不铺满';
+  roiCss=''; if(VW&&VH) stage.style.aspectRatio=VW+'/'+VH;
+};
+document.getElementById('btnFixed').onclick=function(){
+  S.fixed.on=!S.fixed.on;
+  this.classList.toggle('on',S.fixed.on);
+  this.textContent=S.fixed.on?'固定棋盘':'跟踪标记';
+  if(S.fixed.on&&G.on){ G.on=false; gimbalOff();
+    const gb=document.getElementById('btnGimbal');
+    if(gb){ gb.classList.remove('on'); gb.textContent='开启云台'; } }
+  updateStatus();
+};
+document.getElementById('btnMask').onclick=function(){
+  S.mask.on=!S.mask.on;
+  this.classList.toggle('on',S.mask.on);
+  this.textContent=S.mask.on?'棋盘外遮黑':'显示全画面';
+};
+document.getElementById('rngPad').oninput=e=>{
+  S.mask.pad=+e.target.value;
+  document.getElementById('padVal').textContent=(+e.target.value).toFixed(1);
+  saveCfg();
+};
+document.getElementById('rngFixed').oninput=e=>{
+  S.fixed.size=e.target.value/100;
+  document.getElementById('fixVal').textContent=e.target.value;
+  saveCfg();
+};
+document.getElementById('rngRoiQ').oninput=e=>{
+  S.roiQ=e.target.value/100;
+  document.getElementById('roiQVal').textContent=e.target.value;
+};
+document.getElementById('btnRetry').onclick=function(){
+  S.procRetry=!S.procRetry; this.classList.toggle('on',S.procRetry);
+  this.textContent=S.procRetry?'大角度自动重试':'重试已关';
+};
+function setPresent(on){
+  document.body.classList.toggle('present',on);
+  const b=document.getElementById('btnPresent');
+  b.classList.toggle('on',on); b.textContent=on?'退出演示 (F)':'全屏演示 (F)';
+  if(on&&document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+  else if(!on&&document.fullscreenElement&&document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+  setTimeout(layout,120); G._css='';
+}
+document.getElementById('btnAbsMode').onclick=function(){
+  S.absMode=!S.absMode;
+  this.classList.toggle('on',S.absMode);
+  this.textContent=S.absMode?'免基准识别':'用空盘基准';
+  saveCfg(); updateStatus();
+  setHint(S.absMode?'不再需要「校准空盘」，直接和棋子周围的板面颜色比':'改回空盘基准差分法');
+};
+document.getElementById('btnScreenGrid').onclick=function(){
+  S.screenGrid=!S.screenGrid;
+  this.classList.toggle('on',S.screenGrid);
+  this.textContent=S.screenGrid?'按屏幕网格识别':'用四角标定识别';
+  saveCfg(); updateStatus();
+  setHint(S.screenGrid?'把画面调到格线压在实体棋盘上即可，识别位置自动跟随':'改用手动标定的四角');
+};
+document.getElementById('btnCalib').onclick=function(){
+  S.cal.on=!S.cal.on;
+  this.classList.toggle('on',S.cal.on);
+  this.textContent=S.cal.on?'完成标定':'标定四角';
+  if(S.cal.on){
+    // 标定要看得见摄像头原图
+    S._hidevidWas=document.body.classList.contains('hidevid');
+    document.body.classList.remove('hidevid');
+    if(document.body.classList.contains('present')) setPresent(false);
+  }else{
+    S.cal.ok=true;                       // 退出即视为标定完成
+    if(S._hidevidWas) document.body.classList.add('hidevid');
+  }
+  calMark(); roiCss=''; ksMark(); saveCfg(); updateStatus();
+};
+document.getElementById('btnCalFromRoi').onclick=function(){
+  /* ROI 与标定都在归一化视频坐标系里，直接取矩形四个顶点即可。
+     注意 ROI 是轴对齐矩形，只能表示摄像头正对棋盘的情形；
+     斜视角下画面是梯形，填入后仍需微调四个角。 */
+  S.cal.pts=S.roi.q.map(p=>p.slice());   // ROI 已是四边形，直接照搬
+  S.cal.ok=true; calMark(); saveCfg(); updateStatus();
+  setHint('已按 ROI 填入四角。若摄像头是斜的，蓝色预览网格会和真实格线对不上，再微调四个角即可');
+};
+document.getElementById('btnRoiRect').onclick=function(){
+  const x=S.roi.x, y=S.roi.y, w=S.roi.w, h=S.roi.h;
+  S.roi.q=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
+  roiCss=''; saveCfg();
+  setHint('已把四角摆回矩形');
+};
+for(const b of document.querySelectorAll('.roicorner')) b.onclick=function(){
+  S.roi.sel=+this.dataset.k;
+  document.querySelectorAll('.roicorner').forEach(x=>x.classList.remove('on'));
+  this.classList.add('on');
+};
+/* 四个手柄拖对了位置，但"哪个角是棋盘 (0,0)"可能对不上：
+   摄像头从桌子对面看时，视觉左上其实是棋盘 (N-1,N-1)，整体差 180°。
+   这里只调整对应关系，不动手柄的实际位置。 */
+document.getElementById('btnCalRot').onclick=function(){
+  S.cal.pts.push(S.cal.pts.shift());
+  calMark(); saveCfg(); updateStatus();
+  setHint('已旋转 90°：放一颗子到已知交叉点，看「最近识别到」是否对上');
+};
+document.getElementById('btnCalFlip').onclick=function(){
+  const q=S.cal.pts;
+  [q[0],q[1]]=[q[1],q[0]];
+  [q[3],q[2]]=[q[2],q[3]];
+  calMark(); saveCfg(); updateStatus();
+  setHint('已左右镜像：放一颗子到已知交叉点，看「最近识别到」是否对上');
+};
+document.getElementById('btnCalibReset').onclick=function(){
+  S.cal.pts=[[0.28,0.20],[0.72,0.20],[0.72,0.80],[0.28,0.80]];
+  S.cal.ok=false; calMark(); saveCfg(); updateStatus();
+};
+for(const b of document.querySelectorAll('.calcorner')) b.onclick=function(){
+  S.cal.sel=+this.dataset.k;
+  document.querySelectorAll('.calcorner').forEach(x=>x.classList.remove('on'));
+  this.classList.add('on');
+};
+document.getElementById('btnCal').onclick=calibrateEmpty;
+document.getElementById('btnStones').onclick=function(){
+  S.detectStones=!S.detectStones;
+  this.classList.toggle('on',S.detectStones);
+  this.textContent=S.detectStones?'识别开':'识别关';
+  updateStatus();
+};
+document.getElementById('btnAutoUndo').onclick=function(){
+  S.autoUndo=!S.autoUndo; this.classList.toggle('on',S.autoUndo);
+};
+document.getElementById('rngTh').oninput=e=>{
+  S.stoneTh=+e.target.value; document.getElementById('thVal').textContent=e.target.value; saveCfg();
+};
+document.getElementById('rngThW').oninput=e=>{
+  S.stoneThW=+e.target.value; document.getElementById('thWVal').textContent=e.target.value; saveCfg();
+};
+document.getElementById('btnPending').onclick=function(){
+  S.showPending=!S.showPending;
+  this.classList.toggle('on',S.showPending);
+  this.textContent=S.showPending?'显示待判定圈':'待判定圈已关';
+};
+document.getElementById('btnProj').onclick=function(){
+  /* 位置改由 {t:'move',i,j} 坐标通道承载，图像不再参与定位，错位从根上消失 */
+  S.fixed.on=true;                       // 棋盘固定居中
+  /* 不动 S.roi：控制窗要靠 ROI 把格线对到实体棋盘上做识别，
+     关掉它等于把你辛苦调好的对齐废掉。输出窗自己会强制关 ROI。 */
+  S.fixed.size=0.95;
+  S.lineLight=true;                      // 关键：默认深色线在黑底上完全看不见
+  document.body.classList.remove('hidevid'); // 输出窗自己是黑底，控制窗要留着画面做标定
+  if(G.on){ G.on=false; gimbalOff(); }
+  const set=(id,on,a,b)=>{const el=document.getElementById(id);
+    if(el){ el.classList.toggle('on',on); el.textContent=on?a:b; }};
+  set('btnHideVid',false,'显示视频 (V)','隐藏视频 (V)');
+  set('btnFixed',true,'固定棋盘','跟踪标记');
+  set('btnLine',true,'线条：亮色','线条：深色');
+  document.getElementById('rngFixed').value=95;
+  document.getElementById('fixVal').textContent='95';
+  roiCss=''; ksMark(); roiRestart(); saveCfg();
+  // 不再把控制窗自己全屏，而是另开一个纯输出窗口
+  refreshProjLink();
+  if(openProjWindow()) setHint('已打开投影输出窗口：拖到投影仪那块屏、按 F 全屏；本窗口继续用来调整');
+  updateStatus();
+};
+document.getElementById('btnHideOwn').onclick=function(){
+  S.hideOwn=!S.hideOwn;
+  this.classList.toggle('on',S.hideOwn);
+  this.textContent=S.hideOwn?'本方子只画环':'本方子画实心';
+  saveCfg();
+};
+document.getElementById('btnPresent').onclick=()=>setPresent(!document.body.classList.contains('present'));
+document.getElementById('exitPresent').onclick=()=>setPresent(false);
+document.getElementById('btnHideVid').onclick=function(){
+  const on=!document.body.classList.contains('hidevid');
+  document.body.classList.toggle('hidevid',on);
+  this.classList.toggle('on',on);
+  this.textContent=on?'显示视频 (V)':'隐藏视频 (V)';
+};
+document.addEventListener('fullscreenchange',()=>{
+  if(!document.fullscreenElement&&document.body.classList.contains('present')) setPresent(false);
+});
+document.getElementById('btnGimbal').onclick=function(){
+  G.on=!G.on;
+  this.classList.toggle('on',G.on);
+  this.textContent=G.on?'云台已开':'开启云台';
+  if(!G.on) gimbalOff();
+  layout();
+};
+document.getElementById('btnRot').onclick=function(){
+  G.rot=(G.rot+1)%4;
+  this.textContent='视角 '+(G.rot*90)+'°';
+  G._css='';
+};
+document.getElementById('rngMg').oninput=e=>{
+  G.margin=+e.target.value;
+  document.getElementById('mgVal').textContent=G.margin.toFixed(2);
+  G._css='';
+};
+document.getElementById('btnLine').onclick=function(){
+  S.lineLight=!S.lineLight;
+  this.textContent='线条：'+(S.lineLight?'亮色':'深色');
+  this.classList.toggle('on',S.lineLight);
+};
+document.getElementById('btnDebug').onclick=function(){ S.debug=!S.debug; this.classList.toggle('on',S.debug); };
+document.getElementById('selN').onchange=e=>{
+  S.N=+e.target.value; newBoard(); allocStones(); syncUI();
+  Net.send({t:'state', moves:S.moves, N:S.N, off:S.off});
+};
+document.getElementById('selSeat').onchange=e=>{
+  S.seat=e.target.value;
+  S.phys.fill(0); S.cand.fill(0); S.candN.fill(0); S.physCount=0;
+  // 座位写回本窗口的 URL：两个窗口各自独立，刷新后不会被对方覆盖
+  const u=new URL(location.href); u.searchParams.set('seat',S.seat);
+  history.replaceState(null,'',u);
+  syncUI(); updateStatus(); Net.send({t:'hello'});
+};
+
+document.getElementById('rngOff').oninput=e=>{ S.off=+e.target.value; document.getElementById('offVal').textContent=S.off.toFixed(2); };
+document.getElementById('rngOpa').oninput=e=>{ S.opacity=e.target.value/100; document.getElementById('opaVal').textContent=e.target.value; };
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.key==='c'||e.key==='C') calibrateEmpty();
+  if(e.key==='f'||e.key==='F') setPresent(!document.body.classList.contains('present'));
+  if(e.key==='v'||e.key==='V') document.getElementById('btnHideVid').click();
+  const step=e.shiftKey?0.02:0.005;
+  const m=e.shiftKey?4:1;
+  if(S.roi.on&&S.roi.edit&&e.key.startsWith('Arrow')){
+    const dd=e.shiftKey?0.01:0.002, q=S.roi.q[S.roi.sel];
+    if(e.key==='ArrowLeft') q[0]-=dd;
+    if(e.key==='ArrowRight') q[0]+=dd;
+    if(e.key==='ArrowUp') q[1]-=dd;
+    if(e.key==='ArrowDown') q[1]+=dd;
+    syncRoiRect(); roiCss=''; saveCfg(); e.preventDefault(); return;
+  }
+  if(S.cal.on&&e.key.startsWith('Arrow')){
+    const d=e.shiftKey?0.01:0.002, q=S.cal.pts[S.cal.sel];
+    if(e.key==='ArrowLeft') q[0]-=d;
+    if(e.key==='ArrowRight') q[0]+=d;
+    if(e.key==='ArrowUp') q[1]-=d;
+    if(e.key==='ArrowDown') q[1]+=d;
+    calMark(); saveCfg(); e.preventDefault(); return;
+  }
+  if(e.key==='ArrowLeft'){ if(S.ks.on) ksNudge(-m,0); else { S.roi.panX-=step; roiCss=''; } e.preventDefault(); return; }
+  if(e.key==='ArrowRight'){ if(S.ks.on) ksNudge(m,0); else { S.roi.panX+=step; roiCss=''; } e.preventDefault(); return; }
+  if(e.key==='ArrowUp'){ if(S.ks.on) ksNudge(0,-m); else { S.roi.panY-=step; roiCss=''; } e.preventDefault(); return; }
+  if(e.key==='ArrowDown'){ if(S.ks.on) ksNudge(0,m); else { S.roi.panY+=step; roiCss=''; } e.preventDefault(); return; }
+  if(e.key==='='||e.key==='+'){ setZoom((S.roi.zoom||1)*1.12); return; }
+  if(e.key==='-'||e.key==='_'){ setZoom((S.roi.zoom||1)/1.12); return; }
+  if(e.key==='0'){ S.roi.panX=0; S.roi.panY=0; setZoom(1); return; }
+  if(e.key==='u'||e.key==='U') doUndo();
+  if(e.key==='r'||e.key==='R'){ newBoard(); syncUI(); Net.send({t:'reset'}); }
+});
+setInterval(updateStatus,500);
+
+/* ============================================================
+   10) 打印标记纸（4×4 图案，检测器不依赖字典）
+   ============================================================ */
+const PATTERNS=[
+  [[0,1,1,0],[1,0,0,1],[1,1,0,0],[0,0,1,1]],
+  [[1,0,1,0],[0,1,1,1],[1,1,0,0],[0,1,0,1]],
+  [[1,1,0,1],[0,0,1,0],[1,0,1,1],[0,1,1,0]],
+  [[0,1,0,1],[1,1,1,0],[0,0,1,1],[1,0,0,1]]
+];
+function markerSVG(pat,px){
+  const u=px/6; let r=`<svg width="${px}" height="${px}" viewBox="0 0 6 6" xmlns="http://www.w3.org/2000/svg"><rect width="6" height="6" fill="#000"/>`;
+  for(let y=0;y<4;y++) for(let x=0;x<4;x++)
+    if(!pat[y][x]) r+=`<rect x="${x+1}" y="${y+1}" width="1" height="1" fill="#fff"/>`;
+  return r+'</svg>';
+}
+document.getElementById('btnPrint').onclick=()=>{
+  const N=S.N, off=S.off, d=N-1+2*off;
+  const side=170;                       // mm，纸面棋盘区（含外扩）边长
+  const m=side/d;                       // 一格 mm
+  const msz=m*1.6;                      // 标记边长
+  const pos=[[0,0],[1,0],[1,1],[0,1]];
+  let html=`<div style="position:relative;width:${side}mm;height:${side}mm;margin:6mm auto;font-family:sans-serif">`;
+  pos.forEach((p,i)=>{
+    const cx=p[0]*side, cy=p[1]*side;
+    html+=`<div style="position:absolute;left:${cx-msz/2}mm;top:${cy-msz/2}mm;width:${msz}mm;height:${msz}mm">${markerSVG(PATTERNS[i],200)}</div>`;
+  });
+  html+=`<div style="position:absolute;left:0;bottom:-8mm;color:#888;font-size:9pt">五子棋 ${N}×${N} · 4×4 标记 · offset=${off.toFixed(2)} 格 · 标记中心间距 ${side.toFixed(0)}mm</div></div>`;
+  document.getElementById('sheet').innerHTML=html;
+  window.print();
+};
+</script>
+</body>
+</html>
