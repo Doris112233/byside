@@ -1,3 +1,11 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BySide 咫尺</title>
+<meta name="description" content="让相隔千里的家人，聚到同一张桌上——项目背景、系统原理、BOM 与实现文档">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%93%BD%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
   :root{
@@ -39,6 +47,7 @@
   :focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
 
   .doc{ max-width:1180px; margin:0 auto; padding:0 24px 140px; }
+  @media (max-width:420px){ .doc{ padding:0 16px 100px; } }
 
   /* ---------- cover ---------- */
   .cover{
@@ -87,6 +96,21 @@
   }
   .rail a:hover, .rail a:focus-visible{ color:var(--ink); border-left-color:var(--amber); background:var(--amber-soft); }
   .rail .num{ color:var(--amber); font-weight:600; }
+
+  @media (max-width:900px){
+    .layout{ grid-template-columns:1fr; gap:0; }
+    .rail{
+      position:static; flex-direction:row; gap:2px; overflow-x:auto;
+      padding-bottom:10px; margin-bottom:28px; border-bottom:1px solid var(--line);
+      -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    }
+    .rail::-webkit-scrollbar{ display:none; }
+    .rail a{
+      flex:none; white-space:nowrap; border-left:none; border-bottom:2px solid transparent;
+      padding:6px 11px;
+    }
+    .rail a:hover, .rail a:focus-visible{ border-left-color:transparent; border-bottom-color:var(--amber); }
+  }
 
   .content{ display:flex; flex-direction:column; gap:92px; min-width:0; }
   .content > section{ scroll-margin-top:28px; }
@@ -149,8 +173,8 @@
   }
 
   /* ---------- diagram ---------- */
-  figure.diagram{ margin:0; }
-  figure.diagram svg{ width:100%; height:auto; display:block; color:var(--ink); }
+  figure.diagram{ margin:0; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  figure.diagram svg{ width:100%; min-width:640px; height:auto; display:block; color:var(--ink); }
   figure.diagram figcaption{
     margin-top:18px; font-size:13.5px; color:var(--ink-dim); max-width:680px; line-height:1.75;
   }
@@ -215,7 +239,8 @@
   }
   .closing .statement em{ font-style:normal; color:var(--amber); }
 </style>
-
+</head>
+<body>
 <div class="doc">
 
   <header class="cover">
@@ -631,3 +656,6 @@
     </main>
   </div>
 </div>
+
+</body>
+</html>
