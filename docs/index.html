@@ -4,90 +4,49 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BySide 咫尺</title>
-<meta name="description" content="让相隔千里的家人，聚到同一张桌上——项目背景、系统原理、BOM 与实现文档">
+<meta name="description" content="让相隔千里的家人，聚到同一张桌上——一半实体、一半虚拟的家庭共处系统">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%93%BD%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
+  /* 全篇刻意只做一套深色——暖光落在深色木桌上的样子，不随系统主题切换 */
   :root{
-    --paper:#F1ECE2; --ink:#1B1F27; --ink-dim:#5B6070;
-    --line:rgba(27,31,39,.13); --surface:#FFFFFF; --shadow:rgba(27,31,39,.08);
-    --amber:#C1751F; --amber-soft:rgba(193,117,31,.13);
-    --indigo:#3E4F7A; --indigo-soft:rgba(62,79,122,.11);
-    --wood:#8B6947;
+    --bg:#181A22; --ink:#F3EEE3; --ink-dim:#ABB0C2;
+    --line:rgba(243,238,227,.13); --surface:rgba(255,255,255,.045); --surface-line:rgba(255,255,255,.09);
+    --shadow:rgba(0,0,0,.35);
+    --amber:#E0975A; --amber-soft:rgba(224,151,90,.15); --lamp:#F0B25A;
+    --indigo:#8CA2D6; --indigo-soft:rgba(140,162,214,.15);
     --font-display:"Noto Serif SC","Songti SC",serif;
     --font-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
     --font-mono:"IBM Plex Mono","SFMono-Regular",Menlo,monospace;
   }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --paper:#14171D; --ink:#ECE7DC; --ink-dim:#9CA3B0;
-      --line:rgba(236,231,220,.14); --surface:#1B1F27; --shadow:rgba(0,0,0,.4);
-      --amber:#E0975A; --amber-soft:rgba(224,151,90,.16);
-      --indigo:#8CA2D6; --indigo-soft:rgba(140,162,214,.15);
-      --wood:#A9835D;
-    }
-  }
-  :root[data-theme="dark"]{
-    --paper:#14171D; --ink:#ECE7DC; --ink-dim:#9CA3B0;
-    --line:rgba(236,231,220,.14); --surface:#1B1F27; --shadow:rgba(0,0,0,.4);
-    --amber:#E0975A; --amber-soft:rgba(224,151,90,.16);
-    --indigo:#8CA2D6; --indigo-soft:rgba(140,162,214,.15);
-    --wood:#A9835D;
-  }
-
   *{box-sizing:border-box}
+  html{ background:var(--bg); }
   body{
-    background:var(--paper); color:var(--ink); font-family:var(--font-body);
-    font-size:16px; line-height:1.7; -webkit-font-smoothing:antialiased;
+    background:var(--bg); color:var(--ink); font-family:var(--font-body);
+    font-size:16px; line-height:1.75; -webkit-font-smoothing:antialiased;
   }
   ::selection{ background:var(--amber-soft); color:var(--ink); }
   a{ color:inherit; }
-  h1,h2,h3{ font-family:var(--font-display); text-wrap:balance; }
+  h1,h2,h3{ font-family:var(--font-display); text-wrap:balance; margin:0; }
   p{ margin:0; }
   :focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
 
-  .doc{ max-width:1180px; margin:0 auto; padding:0 24px 140px; }
-  @media (max-width:420px){ .doc{ padding:0 16px 100px; } }
+  /* ---------- 环境光：固定在视口后面，不随内容滚动，营造统一的暖光氛围 ---------- */
+  .ambient{ position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+  .glow{ position:absolute; border-radius:50%; filter:blur(60px); }
+  .glow-a{ width:640px; height:640px; left:-120px; top:-160px; background:var(--lamp); opacity:.10; }
+  .glow-b{ width:560px; height:560px; right:-140px; bottom:10%; background:var(--indigo); opacity:.08; }
+  .glow-canvas{ position:fixed; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; mix-blend-mode:screen; opacity:.45; }
 
-  /* ---------- cover ---------- */
-  .cover{
-    padding:76px 0 52px; border-bottom:1px solid var(--line);
-    margin-bottom:60px; display:flex; flex-direction:column; gap:20px;
+  /* ---------- 主网格：目录 + 内容，两者从第一屏开始就共用同一套列宽，不会错位 ---------- */
+  .shell{
+    position:relative; z-index:1; display:grid; grid-template-columns:196px 1fr; gap:52px;
+    max-width:1180px; margin:0 auto; padding:0 24px 130px; align-items:start;
   }
-  .cover .eyebrow{
-    font-family:var(--font-mono); font-size:12px; letter-spacing:.09em;
-    text-transform:uppercase; color:var(--amber); font-weight:600;
-    display:flex; align-items:center; gap:10px;
-  }
-  .cover .eyebrow::before{ content:""; width:22px; height:1.5px; background:var(--amber); display:inline-block; }
-  .brandmark{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
-  .brandmark .en{
-    font-family:var(--font-display); font-weight:900; font-size:clamp(42px,7vw,68px);
-    line-height:1.02; letter-spacing:-.01em; margin:0;
-  }
-  .brandmark .zh{
-    font-family:var(--font-display); font-weight:700; font-size:clamp(22px,3vw,30px);
-    color:var(--amber); position:relative; padding-left:18px;
-  }
-  .brandmark .zh::before{
-    content:""; position:absolute; left:0; top:8%; height:84%; width:2px; background:var(--line);
-  }
-  .cover .slogan{
-    font-family:var(--font-display); font-weight:700; font-size:clamp(18px,2.1vw,21px);
-    color:var(--ink); max-width:600px; line-height:1.6;
-  }
-  .cover .thesis{ font-size:15.5px; color:var(--ink-dim); max-width:620px; line-height:1.85; }
-  .cover .meta{
-    display:flex; flex-wrap:wrap; gap:9px 26px; font-family:var(--font-mono);
-    font-size:12px; color:var(--ink-dim); margin-top:6px;
-  }
-  .cover .meta b{ color:var(--ink); font-weight:600; }
-
-  /* ---------- layout ---------- */
-  .layout{ display:grid; grid-template-columns:188px 1fr; gap:56px; align-items:start; }
   .rail{
-    position:sticky; top:28px; display:flex; flex-direction:column; gap:1px;
-    font-family:var(--font-mono);
+    position:sticky; top:32px; display:flex; flex-direction:column; gap:1px;
+    font-family:var(--font-mono); padding-top:112px;
   }
   .rail a{
     display:flex; gap:11px; align-items:baseline; text-decoration:none;
@@ -98,194 +57,163 @@
   .rail .num{ color:var(--amber); font-weight:600; }
 
   @media (max-width:900px){
-    .layout{ grid-template-columns:1fr; gap:0; }
+    .shell{ grid-template-columns:1fr; gap:0; }
     .rail{
-      position:static; flex-direction:row; gap:2px; overflow-x:auto;
-      padding-bottom:10px; margin-bottom:28px; border-bottom:1px solid var(--line);
+      position:static; flex-direction:row; gap:2px; overflow-x:auto; padding-top:0;
+      padding-bottom:10px; margin-bottom:8px; border-bottom:1px solid var(--line);
       -webkit-overflow-scrolling:touch; scrollbar-width:none;
     }
     .rail::-webkit-scrollbar{ display:none; }
-    .rail a{
-      flex:none; white-space:nowrap; border-left:none; border-bottom:2px solid transparent;
-      padding:6px 11px;
-    }
+    .rail a{ flex:none; white-space:nowrap; border-left:none; border-bottom:2px solid transparent; padding:6px 11px; }
     .rail a:hover, .rail a:focus-visible{ border-left-color:transparent; border-bottom-color:var(--amber); }
   }
 
-  .content{ display:flex; flex-direction:column; gap:92px; min-width:0; }
-  .content > section{ scroll-margin-top:28px; }
-  .content > section:not(:first-child){ border-top:1px solid var(--line); padding-top:60px; }
+  .content{ min-width:0; }
+  .content > *{ padding:64px 0; }
+  .content > *:not(:first-child){ border-top:1px solid var(--line); }
+  @media (max-width:600px){ .content > *{ padding:48px 0; } }
 
-  .sec-head{ display:flex; align-items:baseline; gap:16px; margin-bottom:30px; }
-  .sec-head .idx{ font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--amber); }
-  .sec-head h2{ font-weight:900; font-size:clamp(23px,3vw,30px); margin:0; }
+  .kicker{
+    font-family:var(--font-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--amber); font-weight:600; margin-bottom:16px; display:flex; align-items:center; gap:10px;
+  }
+  .kicker::before{ content:""; width:20px; height:1.5px; background:var(--amber); display:inline-block; }
+  h2.title{ font-weight:900; font-size:clamp(25px,3.2vw,34px); margin-bottom:26px; }
 
-  .prose{ max-width:640px; font-size:15.5px; color:var(--ink); }
+  .prose{ max-width:640px; font-size:16px; }
+  .prose.dim{ color:var(--ink-dim); }
   .prose + .prose{ margin-top:14px; }
-  .dim{ color:var(--ink-dim); }
 
   blockquote.pull{
-    font-family:var(--font-display); font-weight:700; font-size:clamp(20px,2.4vw,25px);
-    color:var(--ink); border-left:3px solid var(--amber); padding-left:22px;
-    margin:30px 0 0; max-width:560px; line-height:1.5;
+    font-family:var(--font-display); font-weight:700; font-size:clamp(21px,2.6vw,27px);
+    border-left:3px solid var(--amber); padding-left:22px; margin:32px 0 0; max-width:560px; line-height:1.55;
   }
 
-  /* ---------- cards ---------- */
+  /* ---------- 封面 ---------- */
+  .cover{ padding-top:96px !important; padding-bottom:80px !important; }
+  @keyframes riseIn{ from{ opacity:0; transform:translateY(16px) } to{ opacity:1; transform:translateY(0) } }
+  .cover .brandmark, .cover .slogan, .cover .thesis, .cover .tag{ animation:riseIn .95s cubic-bezier(.16,1,.3,1) both; }
+  .cover .slogan{ animation-delay:.1s }
+  .cover .thesis{ animation-delay:.2s }
+  .cover .tag{ animation-delay:.3s }
+
+  .brandmark{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  .brandmark .en{ font-family:var(--font-display); font-weight:900; font-size:clamp(46px,8vw,78px); line-height:1; letter-spacing:-.01em; }
+  .brandmark .zh{ font-family:var(--font-display); font-weight:700; font-size:clamp(23px,3.2vw,30px); color:var(--lamp); position:relative; padding-left:18px; }
+  .brandmark .zh::before{ content:""; position:absolute; left:0; top:8%; height:84%; width:2px; background:var(--line); }
+  .cover .slogan{ font-family:var(--font-display); font-weight:700; font-size:clamp(19px,2.2vw,22px); max-width:600px; line-height:1.6; margin-top:22px; }
+  .cover .thesis{ font-size:16px; color:var(--ink-dim); max-width:600px; line-height:1.9; margin-top:16px; }
+  .cover .tag{ font-family:var(--font-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-dim); margin-top:26px; opacity:.85; }
+
+  /* ---------- 卡片 ---------- */
   .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
   .grid3{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
   @media (max-width:760px){ .grid2,.grid3{ grid-template-columns:1fr; } }
 
-  .card{
-    background:var(--surface); border:1px solid var(--line); border-radius:14px;
-    padding:24px; box-shadow:0 1px 3px var(--shadow);
-  }
-  .card .eyebrow-sm{
-    font-family:var(--font-mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase;
-    color:var(--indigo); font-weight:600; margin-bottom:10px; display:block;
-  }
-  .card h3{ font-size:17px; font-weight:700; margin:0 0 8px; }
-  .card p{ font-size:14px; color:var(--ink-dim); line-height:1.65; }
-
-  .card.tight{ padding:18px 20px; }
+  .card{ background:var(--surface); border:1px solid var(--surface-line); border-radius:16px; padding:26px; box-shadow:0 1px 3px var(--shadow); }
+  .card .eyebrow-sm{ font-family:var(--font-mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--indigo); font-weight:600; margin-bottom:10px; display:block; }
+  .card h3{ font-size:17px; font-weight:700; margin-bottom:8px; }
+  .card p{ font-size:14px; color:var(--ink-dim); line-height:1.7; }
+  .card.tight{ padding:20px 22px; }
   .card.tight h3{ font-size:15.5px; margin-bottom:6px; }
   .card.tight p{ font-size:13.5px; }
 
-  .subgroup-label{
-    font-family:var(--font-mono); font-size:12px; letter-spacing:.05em; color:var(--ink-dim);
-    text-transform:uppercase; margin:0 0 14px;
-  }
-  .scenario-block + .scenario-block{ margin-top:34px; }
+  .subgroup-label{ font-family:var(--font-mono); font-size:12px; letter-spacing:.05em; color:var(--ink-dim); text-transform:uppercase; margin-bottom:14px; }
+  .scenario-block + .scenario-block{ margin-top:36px; }
 
-  .note{
-    border-left:3px solid var(--amber); background:var(--amber-soft); border-radius:0 10px 10px 0;
-    padding:14px 18px; font-size:13.5px; color:var(--ink); max-width:640px; margin-top:32px;
-  }
-  .note b{ color:var(--amber); }
+  .softnote{ border-left:3px solid var(--amber); padding-left:18px; font-size:14.5px; color:var(--ink-dim); max-width:640px; margin-top:30px; line-height:1.75; }
 
-  .thanks{ font-size:13.5px; color:var(--ink-dim); border-top:1px solid var(--line); padding-top:20px; margin-top:28px; max-width:600px; }
-  .thanks b{ color:var(--ink); }
+  .pills{ display:flex; flex-wrap:wrap; gap:9px; margin-top:24px; }
+  .pill{ background:var(--indigo-soft); color:var(--indigo); border-radius:999px; padding:8px 16px; font-size:13px; font-weight:500; }
 
-  /* ---------- pills ---------- */
-  .pills{ display:flex; flex-wrap:wrap; gap:9px; margin-top:22px; }
-  .pill{
-    background:var(--indigo-soft); color:var(--indigo); border-radius:999px;
-    padding:7px 15px; font-size:13px; font-weight:500;
-  }
-
-  /* ---------- diagram ---------- */
+  /* ---------- 原理图 ---------- */
   figure.diagram{ margin:0; overflow-x:auto; -webkit-overflow-scrolling:touch; }
   figure.diagram svg{ width:100%; min-width:640px; height:auto; display:block; color:var(--ink); }
-  figure.diagram figcaption{
-    margin-top:18px; font-size:13.5px; color:var(--ink-dim); max-width:680px; line-height:1.75;
-  }
+  figure.diagram figcaption{ margin-top:20px; font-size:14px; color:var(--ink-dim); max-width:680px; line-height:1.8; }
   figure.diagram figcaption .k-solid{ color:var(--amber); font-weight:600; }
   figure.diagram figcaption .k-hollow{ color:var(--indigo); font-weight:600; }
 
-  /* ---------- tables ---------- */
-  .table-wrap{ overflow-x:auto; }
-  table{ width:100%; border-collapse:collapse; font-size:14px; min-width:560px; }
-  th{
-    text-align:left; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.05em;
-    text-transform:uppercase; color:var(--ink-dim); font-weight:600;
-    padding:0 14px 10px; border-bottom:1px solid var(--line);
+  .travel-dot{ animation:travel 4.2s cubic-bezier(.4,0,.2,1) infinite; }
+  @keyframes travel{
+    0%{ transform:translateX(0); opacity:0 } 6%{ opacity:1 }
+    46%{ transform:translateX(480px); opacity:1 } 54%{ transform:translateX(480px); opacity:1 }
+    62%{ transform:translateX(480px); opacity:0 } 100%{ transform:translateX(0); opacity:0 }
   }
-  td{ padding:13px 14px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; vertical-align:top; }
-  tr:last-child td{ border-bottom:none; }
-  td.mono, .mono-cell{ font-family:var(--font-mono); font-size:13px; color:var(--ink-dim); }
+  @media (prefers-reduced-motion: reduce){ .travel-dot{ animation:none; opacity:0; } }
 
-  .status-pill{ display:inline-block; padding:3px 11px; border-radius:999px; font-size:12px; font-weight:500; white-space:nowrap; }
-  .status-pill.done{ background:var(--amber-soft); color:var(--amber); }
-  .status-pill.planned{ background:var(--line); color:var(--ink-dim); }
-
-  /* ---------- stack list ---------- */
-  .stack-grid{ display:grid; grid-template-columns:150px 1fr; gap:16px 22px; max-width:720px; margin-top:8px; }
-  .stack-grid dt{ font-family:var(--font-mono); font-size:12.5px; color:var(--amber); font-weight:600; padding-top:1px; }
-  .stack-grid dd{ margin:0; color:var(--ink-dim); font-size:14.5px; line-height:1.65; }
-  @media (max-width:600px){ .stack-grid{ grid-template-columns:1fr; gap:4px 0; } .stack-grid dt{ margin-top:10px; } }
-
-  h3.sub{ font-size:15px; font-weight:700; margin:0 0 4px; font-family:var(--font-body); }
-  .sub-block + .sub-block{ margin-top:36px; }
-
-  /* ---------- steps ---------- */
-  .steps{ display:flex; flex-direction:column; border-left:2px solid var(--line); margin-left:6px; max-width:600px; }
-  .step{ position:relative; padding:0 0 30px 30px; }
-  .step:last-child{ padding-bottom:0; }
-  .step::before{
-    content:""; position:absolute; left:-7px; top:3px; width:11px; height:11px; border-radius:50%;
-    background:var(--paper); border:2px solid var(--amber);
-  }
-  .step .n{ font-family:var(--font-mono); font-size:12px; color:var(--amber); display:block; margin-bottom:3px; }
-  .step h3{ font-size:16.5px; margin:0 0 5px; }
-  .step p{ font-size:14px; color:var(--ink-dim); }
-
-  /* ---------- roadmap ---------- */
+  /* ---------- 后续计划 ---------- */
   .roadmap{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
   @media (max-width:760px){ .roadmap{ grid-template-columns:1fr; } }
-  .road-card{
-    background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:26px;
-    border-top:3px solid var(--amber);
-  }
+  .road-card{ background:var(--surface); border:1px solid var(--surface-line); border-radius:16px; padding:28px; border-top:3px solid var(--amber); }
   .road-card.b{ border-top-color:var(--indigo); }
   .road-card .eyebrow-sm{ font-family:var(--font-mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; display:block; color:var(--amber); }
   .road-card.b .eyebrow-sm{ color:var(--indigo); }
-  .road-card h3{ font-size:19px; margin:0 0 10px; }
-  .road-card p{ font-size:14.5px; color:var(--ink-dim); line-height:1.7; }
+  .road-card h3{ font-size:20px; margin-bottom:10px; }
+  .road-card p{ font-size:14.5px; color:var(--ink-dim); line-height:1.75; }
 
-  /* ---------- closing ---------- */
+  /* ---------- 结语 ---------- */
   .closing{ max-width:600px; }
-  .closing .statement{
-    font-family:var(--font-display); font-weight:700; font-size:clamp(21px,2.8vw,27px);
-    line-height:1.6; margin:0 0 28px;
-  }
+  .closing .statement{ font-family:var(--font-display); font-weight:700; font-size:clamp(21px,2.8vw,27px); line-height:1.65; margin-bottom:26px; }
   .closing .statement em{ font-style:normal; color:var(--amber); }
+  .closing .credit{ font-size:13.5px; color:var(--ink-dim); border-top:1px solid var(--line); padding-top:22px; margin-top:8px; }
+  .closing .credit b{ color:var(--ink); font-weight:600; }
 </style>
 </head>
 <body>
-<div class="doc">
 
-  <header class="cover">
-    <div class="eyebrow">项目文档 · 背景 / 原理 / BOM</div>
-    <div class="brandmark">
-      <h1 class="en">BySide</h1>
-      <span class="zh">咫尺</span>
-    </div>
-    <p class="slogan">让相隔千里的家人，聚到同一张桌上。</p>
-    <p class="thesis">我们用技术创造一个共同发生的空间，让远方的家人不只能看见彼此，还能一起玩、一起创造，一起度过那些普通却珍贵的时刻。身处两地，却共在此刻——BySide，咫尺天涯，近在身边。</p>
-    <div class="meta">
-      <span>类型 · <b>桌面投影交互系统</b></span>
-      <span>场景 · <b>异地家庭陪伴</b></span>
-      <span>阶段 · <b>黑客松原型</b></span>
-    </div>
-  </header>
+  <div class="ambient" aria-hidden="true">
+    <div class="glow glow-a"></div>
+    <div class="glow glow-b"></div>
+    <canvas id="glowCanvas" class="glow-canvas" aria-hidden="true"></canvas>
+  </div>
 
-  <div class="layout">
+  <div class="shell">
     <nav class="rail" aria-label="章节导航">
-      <a href="#s01"><span class="num">01</span>项目背景</a>
-      <a href="#s02"><span class="num">02</span>目标用户</a>
-      <a href="#s03"><span class="num">03</span>核心创新</a>
-      <a href="#s04"><span class="num">04</span>系统原理</a>
-      <a href="#s05"><span class="num">05</span>应用场景</a>
-      <a href="#s06"><span class="num">06</span>技术实现</a>
-      <a href="#s07"><span class="num">07</span>开发过程</a>
-      <a href="#s08"><span class="num">08</span>团队分工</a>
-      <a href="#s09"><span class="num">09</span>后续计划</a>
-      <a href="#s10"><span class="num">10</span>结语致谢</a>
+      <a href="#bg"><span class="num">01</span>背景</a>
+      <a href="#screen"><span class="num">02</span>屏幕之外</a>
+      <a href="#users"><span class="num">03</span>用户</a>
+      <a href="#innovation"><span class="num">04</span>创新</a>
+      <a href="#principle"><span class="num">05</span>原理</a>
+      <a href="#scenarios"><span class="num">06</span>场景</a>
+      <a href="#roadmap"><span class="num">07</span>计划</a>
+      <a href="#closing"><span class="num">08</span>结语</a>
     </nav>
 
     <main class="content">
 
-      <!-- 01 项目背景 -->
-      <section id="s01">
-        <div class="sec-head"><span class="idx">01</span><h2>项目背景</h2></div>
-        <div class="prose">
-          异地家庭大多依赖电话和视频维系感情，但一通电话总要不断寻找话题，往往只能维持几分钟。对独居老人而言，真正稀缺的不是"听见声音"，而是有人陪他消磨一段时间、参与他的兴趣与日常、给他一个分享经验和作品的机会。
+      <header class="cover">
+        <div class="brandmark">
+          <h1 class="en">BySide</h1>
+          <span class="zh">咫尺</span>
         </div>
-        <blockquote class="pull">陪伴不只是说话，而是一起做事。</blockquote>
+        <p class="slogan">让相隔千里的家人，聚到同一张桌上。</p>
+        <p class="thesis">我们用技术创造一个共同发生的空间，让远方的家人不只能看见彼此，还能一起玩、一起创造，一起度过那些普通却珍贵的时刻。身处两地，却共在此刻——BySide，咫尺天涯，近在身边。</p>
+        <p class="tag">异地家庭陪伴 · 桌面投影交互原型</p>
+      </header>
+
+      <section id="bg">
+        <div class="kicker">从一通电话说起</div>
+        <div class="prose">
+          异地家庭大多依赖电话和视频维系感情。我们想做的，是让陪伴多一些可能——不只是听见彼此的声音，还能有人陪你消磨一段时间、参与你的兴趣与日常，给你一个分享经验和作品的机会。
+        </div>
+        <blockquote class="pull">陪伴不只是说话，更是一起做事，一起玩耍。</blockquote>
       </section>
 
-      <!-- 02 目标用户 -->
-      <section id="s02">
-        <div class="sec-head"><span class="idx">02</span><h2>目标用户</h2></div>
+      <section id="screen">
+        <div class="kicker">屏幕之外</div>
+        <p style="font-family:var(--font-display);font-weight:700;font-size:clamp(22px,3vw,29px);line-height:1.6;max-width:680px;">
+          看见彼此，是一种陪伴。我们想探索的，是屏幕之外的另一种可能——一起"在场"的感觉。
+        </p>
+        <p class="prose dim" style="max-width:600px;margin-top:26px;font-size:16px;line-height:1.9;">
+          我们没有再造一块屏幕，而是想让"一起做事"这件事，重新发生在真实的桌子上：真的棋子、真的笔、真的毛线，用手去碰、去移动、去完成。虚拟的部分只负责一件事——把这份真实，原样递到千里之外的另一张桌子上。
+        </p>
+        <p class="prose dim" style="max-width:600px;margin-top:16px;font-size:16px;line-height:1.9;">
+          市面上的产品，大多要么是纯屏幕、要么是纯实体、够不到远方的人。半实体半虚拟这条路很少有人走，因为它意味着真的要做硬件、真的要做识别、真的要做投影，而不是再开发一个 App。我们想做的，就是提供这样一种屏幕之外的选择——用虚实结合的方式，把"在场感"带回异地的陪伴里。
+        </p>
+      </section>
+
+      <section id="users">
+        <h2 class="title">目标用户群体</h2>
         <div class="grid2">
           <div class="card">
             <span class="eyebrow-sm">桌前的主角</span>
@@ -298,13 +226,13 @@
             <p>随时接入，看见并回应老人此刻正在做的事，把"通话时间"变成"共处时间"。</p>
           </div>
         </div>
+        <p class="softnote">现在，我们最主要面对的是老年人和他们的异地家人。但我们相信，同样的产品理念也能延伸到异地情侣、异地朋友之间——甚至不止两个人，比如几个朋友一起在两地"合桌"玩一场桌游。</p>
       </section>
 
-      <!-- 03 核心创新 -->
-      <section id="s03">
-        <div class="sec-head"><span class="idx">03</span><h2>核心创新</h2></div>
+      <section id="innovation">
+        <h2 class="title">把两张桌子连成一个空间</h2>
         <div class="prose">
-          两台可交互投影，连接两张异地的桌子——让家人的陪伴回到老人身边。老人和孙辈可以在各自家中的桌面上，看见对方的动作与操作，共同游戏、创作和分享。双方进入连接后，两张桌面会显示同一个互动空间，系统实时同步：
+          两台可交互投影，连接两张异地的桌子——让家人的陪伴回到老人身边。老人和孙辈可以在各自家中的桌面上，看见对方的动作与操作，共同游戏、创作和分享。连上之后，两张桌面会变成同一个空间，会被同步过去的，是这些：
         </div>
         <div class="pills">
           <span class="pill">手势与触摸位置</span>
@@ -313,12 +241,11 @@
           <span class="pill">手工制作过程</span>
           <span class="pill">语音与影像</span>
         </div>
-        <div class="prose" style="margin-top:22px">老人不需要学习复杂的软件，只需要像平时一样摆棋、画画或做手工。</div>
+        <div class="prose" style="margin-top:24px">老人不需要学习复杂的软件，只需要像平时一样摆棋、画画或做手工。</div>
       </section>
 
-      <!-- 04 系统原理 -->
-      <section id="s04">
-        <div class="sec-head"><span class="idx">04</span><h2>系统原理</h2></div>
+      <section id="principle">
+        <h2 class="title">这枚坐标是怎么"走"过去的</h2>
 
         <figure class="diagram">
           <svg viewBox="0 0 980 300" role="img" aria-label="老人桌面上的物理棋子经摄像头识别为坐标，通过网络中继同步，在家人桌面上按同一坐标由投影还原为虚拟棋子；反向同理">
@@ -328,11 +255,9 @@
               </marker>
             </defs>
 
-            <!-- Table A -->
             <rect x="20" y="20" width="220" height="220" rx="12" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.4"/>
             <text x="38" y="44" font-family="Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="currentColor">桌面 A · 老人</text>
 
-            <!-- camera pictogram -->
             <g transform="translate(112,52)">
               <rect x="0" y="6" width="34" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
               <rect x="7" y="0" width="9" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
@@ -341,7 +266,6 @@
             </g>
             <text x="129" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">摄像头识别</text>
 
-            <!-- mini grid A -->
             <g stroke="currentColor" stroke-opacity=".4" stroke-width="1.2">
               <line x1="55" y1="150" x2="55" y2="202"/><line x1="81" y1="150" x2="81" y2="202"/>
               <line x1="107" y1="150" x2="107" y2="202"/><line x1="133" y1="150" x2="133" y2="202"/>
@@ -351,7 +275,6 @@
             <circle cx="81" cy="176" r="7.5" fill="var(--amber)"/>
             <text x="81" y="222" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--amber)" font-weight="600">实体棋子</text>
 
-            <!-- node: local recognition -->
             <rect x="270" y="105" width="112" height="50" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"/>
             <text x="326" y="127" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">本地识别引擎</text>
             <text x="326" y="144" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--amber)">(i, j)</text>
@@ -359,7 +282,6 @@
             <line x1="242" y1="130" x2="266" y2="130" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowFwd)"/>
             <text x="254" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".7">① 取坐标</text>
 
-            <!-- node: relay -->
             <rect x="432" y="105" width="116" height="50" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"/>
             <text x="490" y="127" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">中继服务器</text>
             <text x="490" y="144" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".55">WebSocket</text>
@@ -367,7 +289,6 @@
             <line x1="384" y1="130" x2="428" y2="130" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowFwd)"/>
             <text x="406" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".7">② 坐标同步</text>
 
-            <!-- node: render B -->
             <rect x="598" y="105" width="112" height="50" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"/>
             <text x="654" y="127" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">对端渲染引擎</text>
             <text x="654" y="144" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--indigo)">(i, j)</text>
@@ -375,7 +296,6 @@
             <line x1="550" y1="130" x2="594" y2="130" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowFwd)"/>
             <text x="572" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".7">③ 转发坐标</text>
 
-            <!-- Table B -->
             <rect x="740" y="20" width="220" height="220" rx="12" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.4"/>
             <text x="758" y="44" font-family="Noto Sans SC, sans-serif" font-size="13" font-weight="700" fill="currentColor">桌面 B · 家人</text>
 
@@ -397,19 +317,21 @@
             <line x1="712" y1="130" x2="736" y2="130" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowFwd)"/>
             <text x="724" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".7">④ 同坐标投影</text>
 
-            <!-- reverse note -->
             <line x1="800" y1="264" x2="200" y2="264" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 5" opacity=".4" marker-end="url(#arrowFwd)"/>
             <text x="500" y="285" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".55">反向同理：家人落子 → 同样路径镜像回老人桌面</text>
+
+            <circle class="travel-dot" cx="250" cy="130" r="4.5" fill="var(--lamp)"/>
           </svg>
           <figcaption>
-            桌面上移动的每一颗棋子，都会被摄像头识别为坐标、经网络转发、由对面投影在<em>同一坐标</em>上还原——被传递的是<span class="k-solid">位置</span>，不是画面。这也是即便两端投影角度不同、桌面存在畸变，落子依然能精确对齐的原因。<span class="k-solid">●实心</span> = 物理棋子，<span class="k-hollow">○空心</span> = 投影虚拟棋子。
+            桌面上移动的每一颗棋子，都会被摄像头识别为坐标、经网络转发、由对面投影在<em>同一坐标</em>上还原——被传递的是<span class="k-solid">位置</span>，不是画面。<span class="k-solid">●实心</span> = 物理棋子，<span class="k-hollow">○空心</span> = 投影虚拟棋子。
           </figcaption>
         </figure>
+
+        <p class="softnote">这套机制已经在真实硬件上跑通。具体用什么硬件、什么算法，会随每个新场景继续打磨。</p>
       </section>
 
-      <!-- 05 应用场景 -->
-      <section id="s05">
-        <div class="sec-head"><span class="idx">05</span><h2>应用场景</h2></div>
+      <section id="scenarios">
+        <h2 class="title">能一起做的事</h2>
 
         <div class="scenario-block">
           <p class="subgroup-label">一起玩</p>
@@ -454,181 +376,11 @@
           </div>
         </div>
 
-        <div class="note"><b>黑客松阶段重点实现</b>：跑通"下棋"这一个场景的完整 demo，验证两张桌面实时连接这个核心机制；绘画、手工分享等其余场景属于后续规划。</div>
+        <p class="softnote">下棋，是我们第一个做实的场景，用来验证"一起做事"这个核心机制真的成立。绘画、手工分享这些，是同一套理念的延伸——具体怎么实现，会随每个场景继续打磨。</p>
       </section>
 
-      <!-- 06 技术实现 -->
-      <section id="s06">
-        <div class="sec-head"><span class="idx">06</span><h2>技术实现</h2></div>
-
-        <figure class="diagram">
-          <svg viewBox="0 0 980 340" role="img" aria-label="两端桌面硬件对称部署：摄像头经 USB 接入计算终端，计算终端经 HDMI 驱动投影仪，两台计算终端再经 Wi-Fi 通过中继服务器互联">
-            <defs>
-              <marker id="arrowHW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
-              </marker>
-            </defs>
-
-            <!-- Table A -->
-            <rect x="20" y="20" width="260" height="300" rx="14" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.4"/>
-            <text x="38" y="48" font-family="Noto Sans SC, sans-serif" font-size="13.5" font-weight="700" fill="currentColor">桌面 A</text>
-
-            <g transform="translate(133,56)">
-              <rect x="0" y="6" width="34" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="7" y="0" width="9" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="16" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="16" r="2.4" fill="currentColor"/>
-            </g>
-            <text x="150" y="96" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="11.5" font-weight="600" fill="currentColor">Insta360 Link 2</text>
-            <text x="150" y="110" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">影石 · 视觉采集</text>
-
-            <line x1="150" y1="116" x2="150" y2="142" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="166" y="132" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">USB</text>
-
-            <rect x="95" y="146" width="110" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
-            <text x="150" y="165" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">计算终端</text>
-            <text x="150" y="180" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">笔记本 / Mini PC</text>
-
-            <line x1="150" y1="190" x2="150" y2="216" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="166" y="206" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">HDMI</text>
-
-            <g transform="translate(133,220)">
-              <rect x="0" y="10" width="34" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="18" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
-              <polygon points="9,26 25,26 42,60 -8,60" fill="currentColor" opacity=".08"/>
-            </g>
-            <line x1="115" y1="282" x2="185" y2="282" stroke="currentColor" stroke-width="1.4" opacity=".5"/>
-            <text x="150" y="302" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="11.5" font-weight="600" fill="currentColor">Epson 投影仪</text>
-            <text x="150" y="316" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">画面输出</text>
-
-            <!-- Relay -->
-            <rect x="420" y="146" width="140" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
-            <text x="490" y="165" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">中继服务器</text>
-            <text x="490" y="180" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".6">Node.js · WebSocket</text>
-
-            <line x1="205" y1="168" x2="416" y2="168" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="312" y="156" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">Wi-Fi / 局域网 · 公网</text>
-
-            <line x1="560" y1="168" x2="771" y2="168" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="667" y="156" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">Wi-Fi / 局域网 · 公网</text>
-
-            <!-- Table B (mirrored, +680) -->
-            <rect x="700" y="20" width="260" height="300" rx="14" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.4"/>
-            <text x="718" y="48" font-family="Noto Sans SC, sans-serif" font-size="13.5" font-weight="700" fill="currentColor">桌面 B</text>
-
-            <g transform="translate(813,56)">
-              <rect x="0" y="6" width="34" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="7" y="0" width="9" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="16" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="16" r="2.4" fill="currentColor"/>
-            </g>
-            <text x="830" y="96" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="11.5" font-weight="600" fill="currentColor">Insta360 Link 2</text>
-            <text x="830" y="110" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">影石 · 视觉采集</text>
-
-            <line x1="830" y1="116" x2="830" y2="142" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="846" y="132" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">USB</text>
-
-            <rect x="775" y="146" width="110" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
-            <text x="830" y="165" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="12.5" font-weight="700" fill="currentColor">计算终端</text>
-            <text x="830" y="180" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">笔记本 / Mini PC</text>
-
-            <line x1="830" y1="190" x2="830" y2="216" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrowHW)"/>
-            <text x="846" y="206" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">HDMI</text>
-
-            <g transform="translate(813,220)">
-              <rect x="0" y="10" width="34" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <circle cx="17" cy="18" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
-              <polygon points="9,26 25,26 42,60 -8,60" fill="currentColor" opacity=".08"/>
-            </g>
-            <line x1="795" y1="282" x2="865" y2="282" stroke="currentColor" stroke-width="1.4" opacity=".5"/>
-            <text x="830" y="302" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="11.5" font-weight="600" fill="currentColor">Epson 投影仪</text>
-            <text x="830" y="316" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6">画面输出</text>
-          </svg>
-          <figcaption>
-            两端硬件对称部署：摄像头识别桌面画面，交给本地计算终端处理与渲染，再由投影仪打回桌面；两台计算终端通过自建的 WebSocket 中继服务器保持实时连接。
-          </figcaption>
-        </figure>
-
-        <div class="note"><b>后续规划</b>：麦克风、扬声器与手势 / 触控传感器，预留接入计算终端——完整物料状态见下表。</div>
-
-        <div class="sub-block" style="margin-top:44px">
-          <h3 class="sub">BOM 物料清单</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>类别</th><th>器件</th><th>型号 / 规格</th><th>数量</th><th>状态</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>视觉采集</td><td>AI 云台摄像头</td><td class="mono-cell">影石 Insta360 Link 2</td><td>2</td><td><span class="status-pill done">已集成</span></td></tr>
-                <tr><td>画面输出</td><td>桌面短焦投影仪</td><td class="mono-cell">Epson 便携投影系列</td><td>2</td><td><span class="status-pill done">已集成</span></td></tr>
-                <tr><td>计算终端</td><td>边缘计算主机</td><td class="mono-cell">笔记本 / Mini PC</td><td>2</td><td><span class="status-pill done">已集成</span></td></tr>
-                <tr><td>网络中继</td><td>自建信令服务器</td><td class="mono-cell">Node.js · WebSocket</td><td>1</td><td><span class="status-pill done">已集成</span></td></tr>
-                <tr><td>音频交互</td><td>麦克风 + 扬声器</td><td class="mono-cell">—</td><td>2 组</td><td><span class="status-pill planned">规划中</span></td></tr>
-                <tr><td>触控识别</td><td>手势 / 触摸传感</td><td class="mono-cell">—</td><td>—</td><td><span class="status-pill planned">规划中</span></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="sub-block">
-          <h3 class="sub">技术栈</h3>
-          <dl class="stack-grid">
-            <dt>前端架构</dt><dd>原生 JavaScript 单页应用，零框架、零构建依赖，Canvas 2D 实时渲染</dd>
-            <dt>视觉识别</dt><dd>自研免标定棋子识别算法——环形采样 + 中位数比较，抗高光反光与格线干扰</dd>
-            <dt>空间映射</dt><dd>单应变换（Homography）实现任意四边形取景与梯形校正，投影畸变不影响坐标精度</dd>
-            <dt>实时同步</dt><dd>双端 WebSocket 中继，坐标级同步替代画面直传，跨机器延迟以毫秒计</dd>
-            <dt>部署方式</dt><dd>HTTPS 自签证书 + 局域网 / 公网直连，零云端依赖</dd>
-          </dl>
-        </div>
-      </section>
-
-      <!-- 07 开发过程 -->
-      <section id="s07">
-        <div class="sec-head"><span class="idx">07</span><h2>开发过程</h2></div>
-        <div class="steps">
-          <div class="step">
-            <span class="n">STEP 01</span>
-            <h3>验证核心假设</h3>
-            <p>摄像头识别桌面实体棋子的位置，投影在异地桌面还原。</p>
-          </div>
-          <div class="step">
-            <span class="n">STEP 02</span>
-            <h3>攻克同步精度</h3>
-            <p>改用坐标级网络同步替代画面直传，从根本消除投影错位。</p>
-          </div>
-          <div class="step">
-            <span class="n">STEP 03</span>
-            <h3>适配真实环境</h3>
-            <p>任意四边形取景 + 梯形校正，应对投影歪斜与桌面畸变。</p>
-          </div>
-          <div class="step">
-            <span class="n">STEP 04</span>
-            <h3>打通首个场景</h3>
-            <p>双端实体五子棋对弈跑通，验证"隔空共同做事"的核心体验。</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- 08 团队分工 -->
-      <section id="s08">
-        <div class="sec-head"><span class="idx">08</span><h2>团队分工</h2></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>成员</th><th>分工</th></tr></thead>
-            <tbody>
-              <tr><td class="mono-cell">100</td><td>设计、视频、产品</td></tr>
-              <tr><td class="mono-cell">Rebecca</td><td>市场分析与调研、产品</td></tr>
-              <tr><td class="mono-cell">关关</td><td>设计、内容、产品</td></tr>
-              <tr><td class="mono-cell">Doris</td><td>开发、产品</td></tr>
-              <tr><td class="mono-cell">朱利戈</td><td>硬件开发、产品</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- 09 后续计划 -->
-      <section id="s09">
-        <div class="sec-head"><span class="idx">09</span><h2>后续计划</h2></div>
+      <section id="roadmap">
+        <h2 class="title">以后还想做的事</h2>
         <div class="roadmap">
           <div class="road-card a">
             <span class="eyebrow-sm">方向一 · 智能家居</span>
@@ -643,19 +395,97 @@
         </div>
       </section>
 
-      <!-- 10 结语致谢 -->
-      <section id="s10">
-        <div class="sec-head"><span class="idx">10</span><h2>结语 · 致谢</h2></div>
+      <section id="closing">
         <div class="closing">
           <p class="statement">视频通话让异地家人看见彼此；我们想让他们能<em>一起下一盘棋</em>、<em>一起完成一件作品</em>、分享日常、留下共同记忆。我们无法让异地的家人真正坐在同一张桌前——但可以把两张桌子，连接成跨越时空的<em>同一张桌子</em>。</p>
-          <p class="statement" style="font-size:clamp(18px,2.2vw,22px); margin-top:-6px;">身处两地，却共在此刻——<b style="color:var(--amber)">BySide</b>，咫尺天涯，近在身边。</p>
-          <p class="thanks">特别鸣谢 <b>Shenicest 裂变黑客松</b>，给了这个项目从想法走到原型的机会。</p>
+          <p class="statement" style="font-size:clamp(18px,2.2vw,22px); margin-top:-8px;">身处两地，却共在此刻——<b style="color:var(--amber)">BySide</b>，咫尺天涯，近在身边。</p>
+          <p class="credit">由 <b>100</b>、<b>Rebecca</b>、<b>关关</b>、<b>Doris</b>、<b>朱利戈</b>，在 <b>Shenicest 裂变黑客松</b>上一起做出来的第一版。</p>
         </div>
       </section>
 
     </main>
   </div>
-</div>
+
+  <script>
+  (function(){
+    var canvas = document.getElementById('glowCanvas');
+    if(!canvas) return;
+    var gl = null;
+    try{ gl = canvas.getContext('webgl',{alpha:true, premultipliedAlpha:false, antialias:false}); }catch(e){}
+    if(!gl){ canvas.remove(); return; }
+
+    var VERT = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }';
+    // 用 fbm 噪声把到鼠标的距离场揉皱，得到一团不规则、持续变形的暖光；
+    // 连续的 smoothstep 衰减不会出现叠加圆造成的一圈圈边界
+    var FRAG = [
+      'precision highp float;',
+      'uniform vec2 u_res; uniform vec2 u_mouse; uniform float u_time;',
+      'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }',
+      'float noise(vec2 p){',
+      '  vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);',
+      '  return mix(mix(hash(i),hash(i+vec2(1.0,0.0)),u.x), mix(hash(i+vec2(0.0,1.0)),hash(i+vec2(1.0,1.0)),u.x), u.y);',
+      '}',
+      'float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<3;i++){ v+=a*noise(p); p*=2.03; a*=0.5; } return v; }',
+      'void main(){',
+      '  vec2 d = (gl_FragCoord.xy - u_mouse) / u_res.y;',
+      '  float r = length(d);',
+      '  vec2 q = d*1.6 + vec2(u_time*0.035, u_time*0.028);',
+      '  float w = fbm(q) - 0.5;',
+      '  float rr = r + w*0.045;',
+      '  float glow = smoothstep(0.36, 0.0, rr);',
+      '  glow = pow(glow, 2.3) * 0.62;',
+      '  gl_FragColor = vec4(0.98, 0.60, 0.34, glow);',
+      '}'
+    ].join('\n');
+
+    function sh(type, src){
+      var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    }
+    var vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+    if(!vs || !fs){ canvas.remove(); return; }
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){ canvas.remove(); return; }
+    gl.useProgram(prog);
+
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    var uRes = gl.getUniformLocation(prog,'u_res'),
+        uMouse = gl.getUniformLocation(prog,'u_mouse'),
+        uTime = gl.getUniformLocation(prog,'u_time');
+
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+    function resize(){
+      canvas.width = Math.floor(innerWidth*dpr);
+      canvas.height = Math.floor(innerHeight*dpr);
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+    }
+    resize();
+    addEventListener('resize', resize, {passive:true});
+
+    var tx = innerWidth*.5, ty = innerHeight*.22, cx = tx, cy = ty;
+    addEventListener('pointermove', function(e){ tx = e.clientX; ty = e.clientY; }, {passive:true});
+
+    gl.clearColor(0,0,0,0);
+    function frame(t){
+      cx += (tx-cx)*0.06; cy += (ty-cy)*0.06;   // 惰性跟随，光团拖在指针后面
+      gl.uniform2f(uMouse, cx*dpr, canvas.height - cy*dpr);
+      gl.uniform1f(uTime, t*0.001);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ frame(0); return; }
+    (function loop(t){ frame(t); requestAnimationFrame(loop); })(0);
+  })();
+  </script>
 
 </body>
 </html>
