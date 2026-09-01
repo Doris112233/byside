@@ -1372,6 +1372,7 @@ function calibrateEmpty(){
    ============================================================ */
 const Net=(()=>{
   let ws=null, bc=null, tries=0, timer=null, stopped=false;
+  const pending=[];   // 落子/悔棋/重开这类必须送达的消息，重连期间先存着，连上就补发
   const wsURL=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
   const canWS=(location.protocol==='http:'||location.protocol==='https:')&&'WebSocket' in window;
 
@@ -1399,10 +1400,22 @@ const Net=(()=>{
       case 'pong': break;
     }
   }
+  const RETRYABLE={move:1,undo:1,reset:1};   // 这几类丢了就是真的丢了一手棋，必须补发；hello/ping/state 没必要
   function send(m){
     m.seat=S.seat;
-    if(ws&&ws.readyState===1){ try{ ws.send(JSON.stringify(m)); }catch(e){} return; }
-    if(bc){ try{ bc.postMessage(m); }catch(e){} }
+    if(ws&&ws.readyState===1){
+      try{ ws.send(JSON.stringify(m)); return; }
+      catch(e){ /* 发送异常也当作没送达，走下面排队 */ }
+    }
+    if(bc){ try{ bc.postMessage(m); }catch(e){} return; }
+    // WS 正在重连、还没接通：ws.readyState 不是 1，此前这里直接丢消息，
+    // 断线那一瞬间落的子会静默消失，对方永远收不到、也没有任何提示。
+    if(RETRYABLE[m.t]) pending.push(m);
+  }
+  function flushPending(){
+    if(!pending.length||!ws||ws.readyState!==1) return;
+    const q=pending.splice(0,pending.length);
+    for(const m of q){ try{ ws.send(JSON.stringify(m)); }catch(e){} }
   }
   function openBC(){
     if(bc||!('BroadcastChannel' in window)) return;
@@ -1420,7 +1433,7 @@ const Net=(()=>{
     ws=sock;
     sock.onopen=()=>{
       tries=0; closeBC(); S.netMode='ws';
-      send({t:'hello'}); updateStatus();
+      send({t:'hello'}); flushPending(); updateStatus();
     };
     sock.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } handle(m); };
     sock.onclose=()=>{ if(ws===sock){ ws=null; S.netMode=bc?'bc':'off'; updateStatus(); retry(); } };
@@ -1431,13 +1444,23 @@ const Net=(()=>{
     tries++;
     if(tries>=2) openBC();          // 连不上服务器就退回同机广播
     clearTimeout(timer);
-    timer=setTimeout(connect, Math.min(8000, 600*Math.pow(1.7,Math.min(tries,6))));
+    timer=setTimeout(connect, Math.min(2000, 400*Math.pow(1.6,Math.min(tries,6))));
   }
   if(canWS) connect(); else openBC();
   return {send, get mode(){ return S.netMode; },
           get ok(){ return (ws&&ws.readyState===1)||!!bc; }};
 })();
 function applyState(m){
+  /* 对方发来的"整局快照"如果比我们本地已知的手数还短，说明它是过时的
+     （典型触发：对方重连/刷新页面，带着尚未追上的旧历史回传过来）。
+     以前不分青红皂白直接清空重建，会把本地已经确认的一手棋抹掉；
+     桌上的实体棋子没挪地方，识别逻辑立刻又把它当"新落子"提交一次，
+     回合就在两次覆盖之间来回跳。现在遇到更短的快照直接不接受，
+     反过来把我们更新的状态发回去，让对方追上来，而不是我们倒退。 */
+  if(m.moves && S.N===m.N && m.moves.length<S.moves.length){
+    Net.send({t:'state', moves:S.moves, N:S.N, off:S.off});
+    return;
+  }
   if(m.N&&m.N!==S.N){ S.N=m.N; document.getElementById('selN').value=m.N; allocStones(); }
   if(typeof m.off==='number'){
     S.off=m.off;

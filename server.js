@@ -100,14 +100,16 @@ function relay(from,text){
     try{ c.socket.write(frame); }catch(e){ close(c); }
   }
 }
-// 心跳，清理掉线的连接
+// 心跳，清理掉线的连接。原来 20s 一次、要两轮才判死，
+// 最坏情况死连接要 40s 才会被踢掉重连——这段时间里排队等重发的落子就一直卡着。
+// 缩到 5s 一次，最坏情况缩到 10s。
 setInterval(()=>{
   for(const c of clients){
     if(!c.alive){ close(c); continue; }
     c.alive=false;
     try{ c.socket.write(encode('',0x9)); }catch(e){ close(c); }
   }
-},20000);
+},5000);
 
 /* ---------------- 启动 ---------------- */
 function log(m){ console.log('['+new Date().toTimeString().slice(0,8)+'] '+m); }
