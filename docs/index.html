@@ -100,7 +100,12 @@
   .brandmark{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
   /* 标题旁的静态小装饰：同一套手绘笔触，无底框 */
   .mark-deco{ width:clamp(84px,9vw,116px); height:auto; flex:none; align-self:center; margin-left:4px; }
-  @media (max-width:600px){ .mark-deco{ width:76px; margin-left:0; } }
+  /* 窄屏上原本会被挤到第二行，孤零零挂在标题下面。收窄间距和尺寸让它留在同一行。 */
+  @media (max-width:600px){
+    .brandmark{ gap:10px; }
+    .mark-deco{ width:60px; margin-left:0; }
+  }
+  @media (max-width:360px){ .mark-deco{ display:none; } }
   .brandmark .en{ font-family:var(--font-display); font-weight:900; font-size:clamp(46px,8vw,78px); line-height:1; letter-spacing:-.01em; }
   .brandmark .zh{ font-family:var(--font-display); font-weight:700; font-size:clamp(23px,3.2vw,30px); color:var(--lamp); position:relative; padding-left:18px; }
   .brandmark .zh::before{ content:""; position:absolute; left:0; top:8%; height:84%; width:2px; background:var(--line); }
@@ -714,6 +719,13 @@
   (function(){
     var canvas = document.getElementById('glowCanvas');
     if(!canvas) return;
+
+    // 触屏设备上没有光标，这团光只会僵在原地，还白白跑一个 WebGL 循环耗电。
+    // 手机端直接不要它，保留背后两团静态暖光就够了。
+    var hasMouse = window.matchMedia &&
+                   matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if(!hasMouse || window.innerWidth < 760){ canvas.remove(); return; }
+
     var gl = null;
     try{ gl = canvas.getContext('webgl',{alpha:true, premultipliedAlpha:false, antialias:false}); }catch(e){}
     if(!gl){ canvas.remove(); return; }
