@@ -7,3 +7,9 @@ key.pem
 .DS_Store
 .vscode/
 node_modules/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+rdk/frames/
