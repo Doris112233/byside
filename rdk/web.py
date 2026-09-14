@@ -123,7 +123,10 @@ function tick(){
    '<div><span>桌上棋子</span><b>'+s.stones+'</b></div>'+
    '<div><span>遮挡</span><b class="'+(s.occluded?'bad':'ok')+'">'+(s.occluded?'有手':'无')+'</b></div>'+
    '<div><span>格距</span><b>'+s.cell.toFixed(1)+' px</b></div>'+
-   '<div><span>温度</span><b>'+s.temp+' °C</b></div>';
+   '<div><span>温度</span><b>'+s.temp+' °C</b></div>'+
+   '<div><span>房间</span><b>'+(s.room||'-')+'</b></div>'+
+   '<div><span>对端</span><b class="'+((s.peers>1)?'ok':'bad')+'">'+((s.peers>1)?'已连接':'无')+'</b></div>'+
+   '<div style="grid-column:1/-1"><span>中继</span><b style="font-size:12px">'+(s.net||'-')+'</b></div>';
  }).catch(()=>{});
 }
 mk();window.addEventListener('resize',pos);pv.onload=pos;setInterval(tick,700);tick();

@@ -23,6 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import byside_cv as bcv
 import web
+from netlink import NetLink
 from framesource import FrameSource
 
 CFG_PATH = os.path.expanduser("~/.byside/config.json")
@@ -53,6 +54,8 @@ class App:
         self.tracker = bcv.StoneTracker(n)
         self.remote = np.zeros(n * n, np.int8)
 
+        self.link = None             # 中继连接，由 connect() 建立
+        self.room = "default"
         self.frame = None            # 最新彩色帧
         self.cls = np.zeros(n * n, np.int8)
         self.lock = threading.Lock()
@@ -95,6 +98,46 @@ class App:
                            max(-.45, min(.45, float(c["offset"][1])))]
         if c.get("save"):
             self.save_cfg()
+
+    # ---------- 联网 ----------
+    def connect(self, url, room):
+        """接中继。传的是位置不是画面 —— 一次落子几十字节。"""
+        self.room = room
+        self.link = NetLink(url, room=room, seat=self.seat or "?",
+                            on_msg=self.on_peer).start()
+        return self.link
+
+    def on_peer(self, m):
+        """收对端的消息。只认位置，不认画面。"""
+        t = m.get("t")
+        n = self.n
+        if t == "move":
+            i, j, c = m.get("i"), m.get("j"), m.get("c", 0)
+            if isinstance(i, int) and isinstance(j, int) and 0 <= i < n and 0 <= j < n:
+                with self.lock:
+                    self.remote[j * n + i] = c
+        elif t == "state":
+            # 全量快照：重连或新接入时用它对账，避免两边永久不一致
+            grid = np.zeros(n * n, np.int8)
+            for mv in (m.get("moves") or []):
+                if len(mv) >= 3 and 0 <= mv[0] < n and 0 <= mv[1] < n:
+                    grid[mv[1] * n + mv[0]] = mv[2]
+            with self.lock:
+                self.remote = grid
+        elif t == "reset":
+            with self.lock:
+                self.remote = np.zeros(n * n, np.int8)
+        elif t in ("hello", "req"):
+            self.publish_state()
+
+    def publish_state(self):
+        """把本端识别到的完整局面发出去 —— 对端拿它对账。"""
+        if not self.link:
+            return
+        with self.lock:
+            phys = self.tracker.phys
+        moves = [[k % self.n, k // self.n, int(v)] for k, v in enumerate(phys) if v]
+        self.link.send({"t": "state", "moves": moves, "N": self.n})
 
     # ---------- 几何 ----------
     def bp(self, shape):
@@ -183,6 +226,8 @@ class App:
                     if self.mode == "play":
                         for (i, j, now_, was) in self.tracker.update(cls):
                             print(f"[落子] ({i},{j}) {was}→{now_}", flush=True)
+                            if self.link:
+                                self.link.send({"t": "move", "i": i, "j": j, "c": now_})
 
     # ---------- 给网页用的图 ----------
     def preview_jpeg(self):
@@ -235,6 +280,9 @@ class App:
                 "temp": read_temp(),
                 "margin": self.margin, "offset": self.offset,
                 "cam": self.cam_status,
+                "room": self.room,
+                "net": self.link.status if self.link else "未启用",
+                "peers": self.link.peers if self.link else 0,
                 "source": self.source.split("@")[-1],
             }
 
@@ -282,10 +330,15 @@ def main():
     ap.add_argument("--windowed", action="store_true")
     ap.add_argument("--lock-exposure", action="store_true", help="USB 摄像头：关掉自动曝光/白平衡")
     ap.add_argument("--proc-width", type=int, default=960, help="识别用的处理宽度，0 = 用原图")
+    ap.add_argument("--server", default="", help="中继地址，如 ws://1.2.3.4:8778/ws。留空则单机运行")
+    ap.add_argument("--room", default="home", help="房间号，两端必须一致")
     a = ap.parse_args()
 
     app = App(a.source, seat=None if a.seat == "both" else a.seat, proc_width=a.proc_width)
     app.want_lock_exposure = a.lock_exposure
+    if a.server:
+        app.connect(a.server, a.room)
+        print(f"中继 {a.server}  房间「{a.room}」", flush=True)
     web.serve(app, a.port)
     import socket
     s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

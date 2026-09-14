@@ -1373,11 +1373,25 @@ function calibrateEmpty(){
 const Net=(()=>{
   let ws=null, bc=null, tries=0, timer=null, stopped=false;
   const pending=[];   // 落子/悔棋/重开这类必须送达的消息，重连期间先存着，连上就补发
-  const wsURL=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  /* 房间号：?room=home。不带就进 default —— 但 default 也只是「另一个房间」，
+     不再是所有人共享的一条总线。演示时被自己测试标签页干扰的问题从这里根治。 */
+  const ROOM=(new URLSearchParams(location.search).get('room')||'default').slice(0,64);
+  let lastSeq=0;        // 收到的最后一个有序消息的序号，重连时带回去让服务端补发
+  const wsBase=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  const wsURL=()=>wsBase+'?room='+encodeURIComponent(ROOM)+
+                  '&seat='+encodeURIComponent(S.seat||'?')+'&since='+lastSeq;
   const canWS=(location.protocol==='http:'||location.protocol==='https:')&&'WebSocket' in window;
 
   function handle(m){
-    if(!m||m.seat===S.seat) return;
+    if(!m) return;
+    if(typeof m.seq==='number' && m.seq>lastSeq) lastSeq=m.seq;
+    if(m.t==='_joined'){
+      S.room=m.room; S.peers=m.peers;
+      if(m.replayed) console.log('[net] 重连补发了 '+m.replayed+' 条');
+      return;
+    }
+    if(m.t==='_peers'){ S.peers=m.n; updateStatus&&updateStatus(); return; }
+    if(m.seat===S.seat) return;
     if(IS_PROJ) return;          // 输出窗只做渲染，不参与对局
     S.peerSeen=performance.now(); S.peerSeat=m.seat;
     switch(m.t){
@@ -1420,7 +1434,7 @@ const Net=(()=>{
   function openBC(){
     if(bc||!('BroadcastChannel' in window)) return;
     try{
-      bc=new BroadcastChannel('aruco-gomoku');
+      bc=new BroadcastChannel('byside-'+ROOM);
       bc.onmessage=e=>handle(e.data);
       S.netMode='bc';
     }catch(e){ bc=null; }
@@ -1429,7 +1443,7 @@ const Net=(()=>{
   function connect(){
     if(stopped||!canWS) return;
     let sock;
-    try{ sock=new WebSocket(wsURL); }catch(e){ retry(); return; }
+    try{ sock=new WebSocket(wsURL()); }catch(e){ retry(); return; }
     ws=sock;
     sock.onopen=()=>{
       tries=0; closeBC(); S.netMode='ws';

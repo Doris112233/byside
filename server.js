@@ -30,8 +30,26 @@ function serve(req,res){
 
 /* ---------------- 极简 WebSocket（RFC6455 的够用子集） ---------------- */
 const GUID='258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const clients=new Set();
-let seq=0;
+
+/* 房间：每个家庭一个房间，房间之间完全看不见对方。
+   以前是一个全局 clients 广播给所有人 —— 演示时被自己的测试标签页干扰过，
+   根源就在这里。现在连接必须带 ?room=，不带的进 default，
+   但 default 也只是「另一个房间」，不再是「所有人共享一条总线」。 */
+const rooms=new Map();
+let cid=0;
+
+/* 消息分两条通路：
+   慢通路  落子/悔棋/重开/全量状态 —— 分配序号、存进日志、断线能重放
+   快通路  ROI 预览帧、笔迹点流、心跳 —— 转发即忘，丢了就丢了
+   画画的笔迹必须走快通路：等不起稳定判定，也不该把每个点都塞进日志。 */
+const FAST=new Set(['frame','ink','ping','pong','cursor']);
+const LOG_MAX=500;
+
+function room(name){
+  let r=rooms.get(name);
+  if(!r){ r={name, clients:new Set(), seq:0, log:[], snapshot:null}; rooms.set(name,r); }
+  return r;
+}
 
 function encode(str,op){
   const payload=Buffer.from(str||'','utf8'), len=payload.length;
@@ -42,19 +60,36 @@ function encode(str,op){
   head[0]=0x80|(op||0x1);
   return Buffer.concat([head,payload]);
 }
+function sendTo(c,text){ try{ c.socket.write(encode(text,0x1)); }catch(e){ close(c); } }
 
 function onUpgrade(req,socket){
   const key=req.headers['sec-websocket-key'];
-  if(!key||(req.url||'').split('?')[0]!=='/ws'){ socket.destroy(); return; }
+  const u=new URL(req.url||'/', 'http://x');
+  if(!key||u.pathname!=='/ws'){ socket.destroy(); return; }
   const accept=crypto.createHash('sha1').update(key+GUID).digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\n'+
                'Upgrade: websocket\r\nConnection: Upgrade\r\n'+
                'Sec-WebSocket-Accept: '+accept+'\r\n\r\n');
   socket.setNoDelay(true);
 
-  const c={socket, id:++seq, alive:true};
-  clients.add(c);
-  log('客户端 #'+c.id+' 接入（当前 '+clients.size+' 个）');
+  const rname=(u.searchParams.get('room')||'default').slice(0,64);
+  const since=Math.max(0, +(u.searchParams.get('since')||0) || 0);
+  const seat=(u.searchParams.get('seat')||'?').slice(0,16);
+  const r=room(rname);
+  const c={socket, id:++cid, alive:true, room:r, seat};
+  r.clients.add(c);
+  log('#'+c.id+' 接入房间「'+rname+'」seat='+seat+'（房内 '+r.clients.size+' 人，共 '+rooms.size+' 个房间）');
+
+  /* 补齐：先给最近一次全量快照，再给快照之后的增量。
+     客户端带 since 回来时只补它缺的那段；补不上（日志太老）就靠快照兜底。
+     以前没有这一层，断线重连后两边状态可能永久不一致。 */
+  let from=since;
+  if(r.snapshot && r.snapshot.seq>from){ sendTo(c, r.snapshot.text); from=r.snapshot.seq; }
+  let missed=0;
+  for(const e of r.log) if(e.seq>from){ sendTo(c, e.text); missed++; }
+  sendTo(c, JSON.stringify({t:'_joined', room:rname, seat, seq:r.seq,
+                            peers:r.clients.size, replayed:missed}));
+  announce(r);
 
   let buf=Buffer.alloc(0), frags=[], fragOp=0;
   socket.on('data',chunk=>{
@@ -74,40 +109,74 @@ function onUpgrade(req,socket){
       buf=buf.subarray(off+len);
 
       if(op===0x8){ close(c); return; }                        // close
-      if(op===0x9){ try{socket.write(encode(payload.toString('utf8'),0xA));}catch(e){} continue; }  // ping→pong
+      if(op===0x9){ try{socket.write(encode(payload.toString('utf8'),0xA));}catch(e){} continue; }
       if(op===0xA){ c.alive=true; continue; }                  // pong
       if(op===0x0){ frags.push(payload); }                     // 分片续帧
       else { frags=[payload]; fragOp=op; }
       if(!fin) continue;
       const full=Buffer.concat(frags); frags=[];
-      if(fragOp===0x1) relay(c, full.toString('utf8'));
+      if(fragOp===0x1) handle(c, full.toString('utf8'));
     }
   });
   socket.on('error',()=>close(c));
   socket.on('close',()=>close(c));
 }
-function close(c){
-  if(!clients.has(c)) return;
-  clients.delete(c);
-  try{ c.socket.destroy(); }catch(e){}
-  log('客户端 #'+c.id+' 断开（剩 '+clients.size+' 个）');
+
+function handle(from,text){
+  const r=from.room;
+  let m=null;
+  try{ m=JSON.parse(text); }catch(e){}
+  const t=m&&m.t;
+
+  if(t==='ping'){ sendTo(from, '{"t":"pong"}'); }
+
+  if(!t || FAST.has(t)){ relay(r, from, text); return; }       // 快通路：转发即忘
+
+  /* 慢通路：分配房间内全局序号。客户端重连时带上 since=最后收到的 seq，
+     服务端据此补发 —— 这就是「回合跳动、断线丢子」不再复现的原因。 */
+  m.seq=++r.seq;
+  const out=JSON.stringify(m);
+  r.log.push({seq:m.seq, text:out});
+  if(r.log.length>LOG_MAX) r.log.shift();
+  if(t==='state'||t==='reset'){ r.snapshot={seq:m.seq, text:out}; r.log.length=0; }
+  relay(r, from, out);
 }
-/** 中继：转发给除自己以外的所有客户端 */
-function relay(from,text){
+
+function relay(r,from,text){
   const frame=encode(text,0x1);
-  for(const c of clients){
+  for(const c of r.clients){
     if(c===from) continue;
     try{ c.socket.write(frame); }catch(e){ close(c); }
   }
 }
-// 心跳，清理掉线的连接。原来 20s 一次、要两轮才判死，
-// 最坏情况死连接要 40s 才会被踢掉重连——这段时间里排队等重发的落子就一直卡着。
-// 缩到 5s 一次，最坏情况缩到 10s。
+function announce(r){
+  const msg=JSON.stringify({t:'_peers', n:r.clients.size,
+                            seats:[...r.clients].map(x=>x.seat)});
+  for(const c of r.clients) sendTo(c,msg);
+}
+function close(c){
+  const r=c.room;
+  if(!r||!r.clients.has(c)) return;
+  r.clients.delete(c);
+  try{ c.socket.destroy(); }catch(e){}
+  log('#'+c.id+' 离开房间「'+r.name+'」（房内剩 '+r.clients.size+' 人）');
+  if(r.clients.size===0){
+    /* 房间空了但不立刻删 —— 两边都在重连时，状态要还在。
+       十分钟没人再回收。 */
+    r.emptyAt=Date.now();
+  }else announce(r);
+}
 setInterval(()=>{
-  for(const c of clients){
-    if(!c.alive){ close(c); continue; }
-    c.alive=false;
-    try{ c.socket.write(encode('',0x9)); }catch(e){ close(c); }
+  const now=Date.now();
+  for(const [name,r] of rooms){
+    for(const c of r.clients){
+      if(!c.alive){ close(c); continue; }
+      c.alive=false;
+      try{ c.socket.write(encode('',0x9)); }catch(e){ close(c); }
+    }
+    if(r.clients.size===0 && r.emptyAt && now-r.emptyAt>600000){
+      rooms.delete(name); log('房间「'+name+'」空置十分钟，回收');
+    }
   }
 },5000);
 
@@ -131,7 +200,7 @@ if(key&&cert){
   httpsSrv.on('upgrade',onUpgrade);
   httpsSrv.listen(HTTPS_PORT,'0.0.0.0',()=>{
     log('HTTPS 监听 '+HTTPS_PORT);
-    for(const ip of lanIPs()) log('  另一台电脑打开： https://'+ip+':'+HTTPS_PORT+'/?seat=white');
+    for(const ip of lanIPs()) log('  另一台电脑打开： https://'+ip+':'+HTTPS_PORT+'/?seat=white&room=home');
   });
 }else{
   log('未找到 key.pem / cert.pem，只启了 HTTP —— 局域网上的另一台机器将无法使用摄像头');
