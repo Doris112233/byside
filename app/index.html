@@ -538,6 +538,7 @@ const Nav=(()=>{
    ============================================================ */
 const Net=(()=>{
   let ws=null, timer=null, tries=0, lastSeq=0, room=null;
+  const asks=[];      // 等服务端回话的请求（目前只有要声网 token）
   const base=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
   function url(){
     const q=new URLSearchParams({user:ME.code,kind:'web',name:ME.name,since:String(lastSeq)});
@@ -556,6 +557,8 @@ const Net=(()=>{
       if(m.t==='_joined'){ if(m.room!==room){ room=m.room; lastSeq=0; } return; }
       if(typeof m.seq==='number'&&m.seq>lastSeq) lastSeq=m.seq;
       if(m.t==='_peers') return;
+      const i=asks.findIndex(a=>a.t===m.t&&a.channel===m.channel);
+      if(i>=0){ const a=asks.splice(i,1)[0]; clearTimeout(a.timer); a.ok(m); return; }
       if(m.seat===ME.code) return;                // 自己网页发出去又被重放回来的
       Handlers.on(m);
     };
@@ -565,8 +568,12 @@ const Net=(()=>{
   function retry(){ tries++; clearTimeout(timer); timer=setTimeout(connect,Math.min(3000,500*Math.pow(1.5,Math.min(tries,6)))); }
   function send(m){ m.seat=ME.code; if(ws&&ws.readyState===1){ try{ ws.send(JSON.stringify(m)); return true; }catch(e){} } return false; }
   function join(r){ send({t:'join',room:r,all:true}); }
+  function ask(m,ms=6000){ return new Promise(ok=>{
+    const a={t:m.t,channel:m.channel,ok,timer:setTimeout(()=>{ const i=asks.indexOf(a); if(i>=0) asks.splice(i,1); ok(null); },ms)};
+    asks.push(a); if(!send(m)){ clearTimeout(a.timer); asks.splice(asks.indexOf(a),1); ok(null); }
+  }); }
   function setNet(ok){ const n=$('net'); n.classList.toggle('ok',ok); n.querySelector('span').textContent=ok?'已连上':'连接中'; }
-  return {connect,send,join};
+  return {connect,send,join,ask};
 })();
 /* ============================================================
    收消息
@@ -906,10 +913,23 @@ const RTC_AGORA=(cfg)=>{
       if(type==='audio') user.audioTrack.play();
     });
     client.on('connection-state-change',cur=>{ if(cur==='RECONNECTING') toast('画面断了，正在重连…'); });
-    /* 频道默认 = 会话房间号，一局一个频道。控制台的临时 token 绑死频道名，配了 token 就用配的频道。 */
+    /* 频道默认 = 会话房间号，一局一个频道。
+       项目开了 App 证书：token 问中继要。中继只给确实在这个会话里的人签，
+       证书从头到尾不出服务器。手动配了 token（控制台临时 token）就用手配的。 */
     const channel=cfg.channel||S.session.room;
+    let token=cfg.token||null;
+    if(!token){
+      const r=await Net.ask({t:'rtctoken',channel});
+      if(r&&r.token) token=r.token;
+      else console.warn('[rtc] 没领到 token：',r&&r.error||'超时','—— 试试不带 token（测试模式项目能进）');
+    }
+    client.on('token-privilege-will-expire',async()=>{
+      if(cfg.token) return;
+      const r=await Net.ask({t:'rtctoken',channel});
+      if(r&&r.token){ try{ await client.renewToken(r.token); console.log('[rtc] token 已续'); }catch(e){ console.warn('[rtc] 续 token 失败',e); } }
+    });
     try{
-      await client.join(cfg.appId,channel,cfg.token||null,null); joined=true;
+      await client.join(cfg.appId,channel,token,null); joined=true;
       const tracks=[mic,cam].filter(Boolean); if(tracks.length) await client.publish(tracks);
     }catch(e){
       const msg=String(e.message||e);

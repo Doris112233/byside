@@ -5,7 +5,7 @@
  */
 'use strict';
 const http=require('http'), https=require('https'), fs=require('fs'),
-      path=require('path'), crypto=require('crypto'), os=require('os');
+      path=require('path'), crypto=require('crypto'), os=require('os'), zlib=require('zlib');
 
 const ROOT=__dirname;
 const HTTP_PORT=+(process.env.HTTP_PORT||8778);
@@ -28,6 +28,50 @@ function serve(req,res){
     res.end(buf);
   });
 }
+
+
+/* ---------------- 声网 token（AccessToken2 / 007）----------------
+   项目开了 App 证书就必须带 token 才能进频道。证书是密钥，只能在服务器上：
+   网页进了会话后问中继要 token，中继确认「你确实在这个会话房间里」才签。
+   这样拿到 token 的只有这一局的两个人，而证书从头到尾不出服务器。
+
+   签名算法照声网官方参考实现逐字移植（AgoraIO/Tools · AccessToken2.js），
+   零依赖。和官方实现在同一 issueTs/salt 下逐字节比对过。
+   配置从环境变量或 agora.env 读（agora.env 在 .gitignore 里）。 */
+function agoraConfig(){
+  const cfg={appId:process.env.AGORA_APP_ID||'', cert:process.env.AGORA_APP_CERT||''};
+  if(!cfg.appId||!cfg.cert){
+    try{
+      for(const line of fs.readFileSync(path.join(ROOT,'agora.env'),'utf8').split('\n')){
+        const m=line.match(/^\s*(AGORA_APP_ID|AGORA_APP_CERT)\s*=\s*([0-9a-fA-F]{32})\s*$/);
+        if(m){ if(m[1]==='AGORA_APP_ID'&&!cfg.appId) cfg.appId=m[2]; if(m[1]==='AGORA_APP_CERT'&&!cfg.cert) cfg.cert=m[2]; }
+      }
+    }catch(e){}
+  }
+  return cfg;
+}
+const AGORA=agoraConfig();
+const le16=n=>{ const b=Buffer.alloc(2); b.writeUInt16LE(n); return b; };
+const le32=n=>{ const b=Buffer.alloc(4); b.writeUInt32LE(n>>>0); return b; };
+const packBytes=buf=>Buffer.concat([le16(buf.length),buf]);
+const packStr=s=>packBytes(Buffer.from(String(s),'utf8'));
+const hmac=(key,msg)=>crypto.createHmac('sha256',key).update(msg).digest();
+
+/** 发布者 token：进频道 + 发音频 + 发视频 + 发数据流。expire 是从现在起的秒数。 */
+function rtcToken(appId,cert,channel,uid,expire,issueTs,salt){
+  issueTs=issueTs||Math.floor(Date.now()/1000);
+  salt=salt||Math.floor(Math.random()*99999999)+1;
+  const privs=[1,2,3,4];                                   // join / audio / video / data
+  const rtc=Buffer.concat([le16(1),                        // service type = RTC
+    le16(privs.length), ...privs.flatMap(p=>[le16(p),le32(expire)]),
+    packStr(channel), packStr(uid?String(uid):'')]);
+  const info=Buffer.concat([packStr(appId),le32(issueTs),le32(expire),le32(salt),le16(1),rtc]);
+  let signing=hmac(le32(issueTs),cert);                    // 注意：证书按字符串参与，不是解码后的十六进制
+  signing=hmac(le32(salt),signing);
+  const sig=hmac(signing,info);
+  return '007'+zlib.deflateSync(Buffer.concat([packBytes(sig),info])).toString('base64');
+}
+const TOKEN_TTL=2*3600;   // 两小时。一起吃饭可能更久，网页会在快过期时来续
 
 /* ---------------- 极简 WebSocket（RFC6455 的够用子集） ---------------- */
 const GUID='258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -202,6 +246,17 @@ function handle(from,text){
     return;
   }
 
+  if(t==='rtctoken'){
+    const ch=String(m.channel||'');
+    const inRoom=from.room&&from.room.name===ch&&ch.startsWith('s-');
+    if(!AGORA.appId||!AGORA.cert){ sendTo(from,JSON.stringify({t:'rtctoken',channel:ch,error:'no-cert'})); return; }
+    if(!inRoom){ sendTo(from,JSON.stringify({t:'rtctoken',channel:ch,error:'not-in-room'})); return; }
+    const token=rtcToken(AGORA.appId,AGORA.cert,ch,0,TOKEN_TTL);
+    sendTo(from,JSON.stringify({t:'rtctoken',channel:ch,appId:AGORA.appId,token,ttl:TOKEN_TTL}));
+    log(from.code+' 领了会话「'+ch+'」的声网 token');
+    return;
+  }
+
   if(t==='busy'&&from.code){
     const mm=meta.get(from.code)||{}; mm.busy=!!m.on; meta.set(from.code,mm);
     notifyPresence(from.code); return;
@@ -290,7 +345,11 @@ function lanIPs(){
 
 const httpSrv=http.createServer(serve);
 httpSrv.on('upgrade',onUpgrade);
-httpSrv.listen(HTTP_PORT,'0.0.0.0',()=>log('HTTP  监听 '+HTTP_PORT));
+httpSrv.listen(HTTP_PORT,'0.0.0.0',()=>{
+  log('HTTP  监听 '+HTTP_PORT);
+  log(AGORA.appId&&AGORA.cert?'声网 token 签发已启用（App ID '+AGORA.appId.slice(0,6)+'…）':'未配置声网证书 —— 网页将退回原生 WebRTC');
+});
+module.exports={rtcToken};
 
 let key,cert;
 try{ key=fs.readFileSync(path.join(ROOT,'key.pem')); cert=fs.readFileSync(path.join(ROOT,'cert.pem')); }catch(e){}

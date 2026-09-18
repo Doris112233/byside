@@ -13,3 +13,6 @@ node_modules/
 __pycache__/
 *.pyc
 rdk/frames/
+
+# 声网 App 证书 —— 密钥，只能放服务器，绝不进仓库、绝不进网页
+agora.env
