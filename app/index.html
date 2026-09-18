@@ -4,8 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#181A22">
-<!-- 声网 App ID：填在这里，或在设备上打开一次 ?agora=你的AppID（会记住）。留空 = 浏览器原生 WebRTC -->
-<meta name="agora-app-id" content="">
+<!-- 声网。App ID 留空 = 用浏览器原生 WebRTC。
+     项目在「测试模式（无证书）」时 token 留空即可；
+     开了 App 证书的「安全模式」必须带 token，否则报 dynamic use static key。
+     临时 token 从控制台生成（绑定固定频道名、24 小时有效），
+     这时要把 agora-channel 也填上，让两端进同一个固定频道。 -->
+<meta name="agora-app-id" content="ed991ae46d4a404ca2d5347633e3916c">
+<meta name="agora-token" content="">
+<meta name="agora-channel" content="">
 <title>咫尺 · 一起在桌边</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
@@ -472,7 +478,7 @@ const RTC_NATIVE=(()=>{
   return {prepare,offer,onSignal,connected,close};
 })();
 
-const RTC_AGORA=(appId)=>{
+const RTC_AGORA=(cfg)=>{
   let client=null, mic=null, cam=null, joined=false;
   const stage=()=>document.querySelector('.stage'), meBox=()=>document.querySelector('.me');
   async function prepare(){
@@ -495,13 +501,26 @@ const RTC_AGORA=(appId)=>{
     });
     client.on('user-left',()=>{ toast('对方的画面断开了'); });
     client.on('connection-state-change',(cur)=>{ if(cur==='RECONNECTING') toast('画面断了，正在重连…'); });
+    /* 频道默认 = 家庭码，一家人天然在同一个频道。
+       但控制台生成的临时 token 是绑死频道名的，配了 token 就必须用配的那个频道。 */
+    const channel=cfg.channel||S.me.fam;
     try{
-      /* 频道 = 家庭码。测试模式（项目无证书）token 传 null；安全模式要换成服务端签的 token。 */
-      await client.join(appId, S.me.fam, null, null);
+      await client.join(cfg.appId, channel, cfg.token||null, null);
       joined=true;
       const tracks=[mic,cam].filter(Boolean);
       if(tracks.length) await client.publish(tracks);
-    }catch(e){ toast('声网连不上：'+(e.code||e.message||e),5000); console.error(e); }
+    }catch(e){
+      const code=e.code||'';
+      if(String(e.message||'').includes('dynamic use static key')||code==='CAN_NOT_GET_GATEWAY_SERVER')
+        toast('声网项目开了安全模式，需要 token。先退回原生画面。',6000);
+      else if(code==='INVALID_VENDOR_KEY') toast('声网 App ID 不对',5000);
+      else toast('声网连不上：'+(code||e.message||e),5000);
+      console.error('[rtc] join 失败',e);
+      /* 连不上就别把通话搭死 —— 退回原生 WebRTC，脸和声音还是有的。 */
+      RTC.impl=RTC_NATIVE; RTC.name='native';
+      await RTC_NATIVE.prepare();
+      if(S.call.caller&&S.call.with) RTC_NATIVE.offer(S.call.with);
+    }
   }
   async function offer(){ }            // 声网没有 offer/answer，接通即 join
   async function onSignal(){ }
@@ -516,19 +535,31 @@ const RTC_AGORA=(appId)=>{
   return {prepare,offer,onSignal,connected,close};
 };
 
-/* 选实现：URL 参数 > localStorage > <meta>。有 App ID 就异步装 SDK，装好前先用原生。 */
+/* 选实现：URL 参数 > localStorage > <meta>。有 App ID 就异步装 SDK，装好前先用原生。
+   三个可配项都走同一套优先级：
+     ?agora=APPID     App ID（?agora=off 清掉，退回原生）
+     ?token=...       安全模式用的临时 token（?token=off 清掉）
+     ?channel=...     固定频道名。临时 token 绑死了频道，所以两端必须进同一个 */
 RTC.impl=RTC_NATIVE;
+const AGORA_CFG={appId:'',token:'',channel:''};
 (()=>{
-  const q=new URLSearchParams(location.search).get('agora');
-  if(q==='off'){ try{ localStorage.removeItem('byside.agora'); }catch(e){} }
-  else if(q){ try{ localStorage.setItem('byside.agora',q); }catch(e){} }
-  let id=''; try{ id=localStorage.getItem('byside.agora')||''; }catch(e){}
-  if(!id) id=(document.querySelector('meta[name="agora-app-id"]')||{}).content||'';
-  id=(id||'').trim();
-  if(!id) return;
+  const q=new URLSearchParams(location.search);
+  const pick=(param,key,meta)=>{
+    const v=q.get(param);
+    if(v==='off'){ try{ localStorage.removeItem(key); }catch(e){} }
+    else if(v){ try{ localStorage.setItem(key,v); }catch(e){} }
+    let out=''; try{ out=localStorage.getItem(key)||''; }catch(e){}
+    if(!out) out=(document.querySelector('meta[name="'+meta+'"]')||{}).content||'';
+    return (out||'').trim();
+  };
+  AGORA_CFG.appId  =pick('agora','byside.agora','agora-app-id');
+  AGORA_CFG.token  =pick('token','byside.agoraToken','agora-token');
+  AGORA_CFG.channel=pick('channel','byside.agoraChannel','agora-channel');
+  if(!AGORA_CFG.appId) return;
   const sc=document.createElement('script');
   sc.src='https://download.agora.io/sdk/release/AgoraRTC_N-4.24.8.js';
-  sc.onload=()=>{ RTC.impl=RTC_AGORA(id); RTC.name='agora'; console.log('[rtc] 声网已就绪'); };
+  sc.onload=()=>{ RTC.impl=RTC_AGORA(AGORA_CFG); RTC.name='agora';
+    console.log('[rtc] 声网已就绪',{token:!!AGORA_CFG.token,channel:AGORA_CFG.channel||'(家庭码)'}); };
   sc.onerror=()=>toast('声网 SDK 加载失败，退回原生 WebRTC',4000);
   document.head.appendChild(sc);
 })();
