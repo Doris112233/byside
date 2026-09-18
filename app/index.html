@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#181A22">
+<!-- 声网 App ID：填在这里，或在设备上打开一次 ?agora=你的AppID（会记住）。留空 = 浏览器原生 WebRTC -->
+<meta name="agora-app-id" content="">
 <title>咫尺 · 一起在桌边</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
@@ -409,6 +411,7 @@ function onAccepted(who){ if(S.call.state==='calling'&&S.call.with===who){ begin
 function beginCall(){
   S.call.state='active'; S.call.startedAt=Date.now();
   $('c-name').textContent=S.call.with; show('s-call'); Net.send({t:'busy',on:true});
+  RTC.connected(S.call.with);
   $('hearts').innerHTML=[0,1,2].map(k=>`<svg viewBox="0 0 24 24" class="ht" style="animation-delay:${k*.9}s"><use href="#ic-heart"/></svg>`).join('');
   tick();
 }
@@ -423,10 +426,19 @@ function endCall(notify=true){
 $('d-end').onclick=()=>endCall(true);
 
 /* ============================================================
-   音视频：浏览器原生 WebRTC，信令走中继。
-   以后换声网只动这一个对象 —— prepare/offer/onSignal/close 四个口子不变。
+   音视频。对外只有五个口子：prepare / offer / onSignal / connected / close。
+   两个实现：
+     native  浏览器原生 WebRTC，信令走我们的中继。局域网和多数家庭宽带能直连。
+     agora   声网 Web SDK。跨城对称 NAT、回声消除、自适应码率都由它兜。
+   有 App ID 就用声网，没有就原生 —— 演示现场哪条通走哪条。
    ============================================================ */
 const RTC=(()=>{
+  const dispatch={impl:null, name:'native'};
+  for(const k of ['prepare','offer','onSignal','connected','close']) dispatch[k]=(...a)=>dispatch.impl[k](...a);
+  return dispatch;
+})();
+
+const RTC_NATIVE=(()=>{
   let pc=null, local=null;
   const ICE=[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.qq.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
   async function prepare(){
@@ -455,8 +467,70 @@ const RTC=(()=>{
       else if(pc){ await pc.setRemoteDescription(m.sdp); }
     }else if(m.ice&&pc){ try{ await pc.addIceCandidate(m.ice); }catch(e){} }
   }
+  function connected(){}
   function close(){ if(pc){ try{pc.close();}catch(e){} pc=null; } $('v-remote').srcObject=null; }
-  return {prepare,offer,onSignal,close};
+  return {prepare,offer,onSignal,connected,close};
+})();
+
+const RTC_AGORA=(appId)=>{
+  let client=null, mic=null, cam=null, joined=false;
+  const stage=()=>document.querySelector('.stage'), meBox=()=>document.querySelector('.me');
+  async function prepare(){
+    if(mic||cam) return true;
+    try{ [mic,cam]=await Promise.all([AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}),AgoraRTC.createCameraVideoTrack({facingMode:'user'})]); }
+    catch(e){
+      try{ mic=await AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}); }catch(_){}
+      if(!mic&&!cam) toast('没拿到摄像头/麦克风权限，先用没画面的方式一起坐一会儿',3600);
+    }
+    if(cam){ $('v-me').style.display='none'; cam.play(meBox(),{mirror:true,fit:'cover'}); }
+    return true;
+  }
+  async function connected(){
+    if(joined) return;
+    client=AgoraRTC.createClient({mode:'rtc',codec:'vp8'});
+    client.on('user-published',async(user,mediaType)=>{
+      await client.subscribe(user,mediaType);
+      if(mediaType==='video'){ $('v-remote').style.display='none'; user.videoTrack.play(stage(),{fit:'cover'}); }
+      if(mediaType==='audio') user.audioTrack.play();
+    });
+    client.on('user-left',()=>{ toast('对方的画面断开了'); });
+    client.on('connection-state-change',(cur)=>{ if(cur==='RECONNECTING') toast('画面断了，正在重连…'); });
+    try{
+      /* 频道 = 家庭码。测试模式（项目无证书）token 传 null；安全模式要换成服务端签的 token。 */
+      await client.join(appId, S.me.fam, null, null);
+      joined=true;
+      const tracks=[mic,cam].filter(Boolean);
+      if(tracks.length) await client.publish(tracks);
+    }catch(e){ toast('声网连不上：'+(e.code||e.message||e),5000); console.error(e); }
+  }
+  async function offer(){ }            // 声网没有 offer/answer，接通即 join
+  async function onSignal(){ }
+  async function close(){
+    try{ if(client&&joined) await client.leave(); }catch(e){}
+    joined=false; client=null;
+    for(const t of [mic,cam]) if(t){ try{ t.stop(); t.close(); }catch(e){} }
+    mic=cam=null;
+    for(const el of document.querySelectorAll('.stage > div[id^="agora-video-player"], .me > div[id^="agora-video-player"]')) el.remove();
+    $('v-remote').style.display=''; $('v-me').style.display=''; $('v-remote').srcObject=null;
+  }
+  return {prepare,offer,onSignal,connected,close};
+};
+
+/* 选实现：URL 参数 > localStorage > <meta>。有 App ID 就异步装 SDK，装好前先用原生。 */
+RTC.impl=RTC_NATIVE;
+(()=>{
+  const q=new URLSearchParams(location.search).get('agora');
+  if(q==='off'){ try{ localStorage.removeItem('byside.agora'); }catch(e){} }
+  else if(q){ try{ localStorage.setItem('byside.agora',q); }catch(e){} }
+  let id=''; try{ id=localStorage.getItem('byside.agora')||''; }catch(e){}
+  if(!id) id=(document.querySelector('meta[name="agora-app-id"]')||{}).content||'';
+  id=(id||'').trim();
+  if(!id) return;
+  const sc=document.createElement('script');
+  sc.src='https://download.agora.io/sdk/release/AgoraRTC_N-4.24.8.js';
+  sc.onload=()=>{ RTC.impl=RTC_AGORA(id); RTC.name='agora'; console.log('[rtc] 声网已就绪'); };
+  sc.onerror=()=>toast('声网 SDK 加载失败，退回原生 WebRTC',4000);
+  document.head.appendChild(sc);
 })();
 
 /* ============================================================
