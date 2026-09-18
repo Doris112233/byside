@@ -866,8 +866,14 @@ const RTC_NATIVE=(()=>{
   const ICE=[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.qq.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
   async function prepare(){
     if(local) return true;
-    try{ local=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280}},audio:{echoCancellation:true,noiseSuppression:true}}); }
-    catch(e){ toast('没拿到摄像头/麦克风，先不带画面一起坐会儿',3600); local=null; return true; }
+    const AUDIO={echoCancellation:true,noiseSuppression:true};
+    try{ local=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280}},audio:AUDIO}); }
+    catch(e){
+      /* 板子上常见：唯一的摄像头被桌面识别占着，要不到视频。
+         原来这里视频音频一起失败 —— 连话都说不了。现在退一步只要麦克风。 */
+      try{ local=await navigator.mediaDevices.getUserMedia({audio:AUDIO}); toast('摄像头在忙，先只用声音',3200); }
+      catch(e2){ toast('没拿到摄像头/麦克风，先不带画面一起坐会儿',3600); local=null; }
+    }
     $('v-me').srcObject=local; return true;
   }
   function make(who){
