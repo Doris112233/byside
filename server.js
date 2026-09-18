@@ -39,12 +39,21 @@ const GUID='258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const rooms=new Map();
 let cid=0;
 
+/* 人和房间是两回事。
+   房间  一局游戏的状态同步（落子、折纸步骤），有序号、能重放
+   人    好友码。邀请、来电、信令是「找人」，不是「找房间」——
+         对方在大厅还是在别的局里，都要能送到。
+   一个人可以有多个连接：网页 + 板子。人走进一个会话房间时，他的板子跟着进去，
+   这样桌上的投影和识别自动接到这一局。 */
+const users=new Map();      // code → Set<conn>
+const subs=new Map();       // code → Set<conn>  谁在关心这个人在不在
+const meta=new Map();       // code → {name, busy}
+
 /* 消息分两条通路：
    慢通路  落子/悔棋/重开/全量状态 —— 分配序号、存进日志、断线能重放
    快通路  ROI 预览帧、笔迹点流、心跳 —— 转发即忘，丢了就丢了
    画画的笔迹必须走快通路：等不起稳定判定，也不该把每个点都塞进日志。 */
-const FAST=new Set(['frame','ink','ping','pong','cursor',
-                    'call','accept','reject','hangup','rtc','point','busy']);
+const FAST=new Set(['frame','ink','ping','pong','cursor','point']);
 const LOG_MAX=500;
 
 function room(name){
@@ -74,24 +83,23 @@ function onUpgrade(req,socket){
                'Sec-WebSocket-Accept: '+accept+'\r\n\r\n');
   socket.setNoDelay(true);
 
-  const rname=(u.searchParams.get('room')||'default').slice(0,64);
+  const code=(u.searchParams.get('user')||'').toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,12);
+  const kind=(u.searchParams.get('kind')==='board')?'board':'web';
+  const rname=(u.searchParams.get('room')||(code?'u:'+code:'default')).slice(0,64);
   const since=Math.max(0, +(u.searchParams.get('since')||0) || 0);
-  const seat=(u.searchParams.get('seat')||'?').slice(0,16);
-  const r=room(rname);
-  const c={socket, id:++cid, alive:true, room:r, seat};
-  r.clients.add(c);
-  log('#'+c.id+' 接入房间「'+rname+'」seat='+seat+'（房内 '+r.clients.size+' 人，共 '+rooms.size+' 个房间）');
-
-  /* 补齐：先给最近一次全量快照，再给快照之后的增量。
-     客户端带 since 回来时只补它缺的那段；补不上（日志太老）就靠快照兜底。
-     以前没有这一层，断线重连后两边状态可能永久不一致。 */
-  let from=since;
-  if(r.snapshot && r.snapshot.seq>from){ sendTo(c, r.snapshot.text); from=r.snapshot.seq; }
-  let missed=0;
-  for(const e of r.log) if(e.seq>from){ sendTo(c, e.text); missed++; }
-  sendTo(c, JSON.stringify({t:'_joined', room:rname, seat, seq:r.seq,
-                            peers:r.clients.size, replayed:missed}));
-  announce(r);
+  const seat=(u.searchParams.get('seat')||(code?code+(kind==='board'?'#board':''):'?')).slice(0,24);
+  const name=(u.searchParams.get('name')||'').slice(0,16);
+  const c={socket, id:++cid, alive:true, room:null, seat, code, kind, watching:new Set()};
+  if(code){
+    if(!users.has(code)) users.set(code,new Set());
+    users.get(code).add(c);
+    const m=meta.get(code)||{name:'',busy:false};
+    if(name) m.name=name;
+    meta.set(code,m);
+  }
+  enter(c, rname, since);
+  log('#'+c.id+' 接入 '+(code?code+'('+kind+') ':'')+'房间「'+rname+'」');
+  if(code) notifyPresence(code);
 
   let buf=Buffer.alloc(0), frags=[], fragOp=0;
   socket.on('data',chunk=>{
@@ -122,15 +130,98 @@ function onUpgrade(req,socket){
   });
   socket.on('error',()=>close(c));
   socket.on('close',()=>close(c));
+  /* http 服务器默认 allowHalfOpen —— 对端发 FIN 只触发 end，close 永远不来。
+     浏览器会先发关闭帧所以没踩到；但板子、被杀掉的标签页直接断 TCP，
+     不接 end 的话对方会一直看到「在线」，要等心跳超时十秒才清掉。 */
+  socket.on('end',()=>close(c));
+}
+
+/* 进房间：补齐快照和增量。客户端带 since 回来时只补缺的那段；
+   补不上（日志太老）就靠快照兜底。 */
+function enter(c, rname, since){
+  const r=room(rname);
+  c.room=r; r.clients.add(c);
+  let from=since||0;
+  const out=[];
+  if(r.snapshot && r.snapshot.seq>from){ out.push(r.snapshot.text); from=r.snapshot.seq; }
+  for(const e of r.log) if(e.seq>from) out.push(e.text);
+  /* _joined 必须先到：序号是按房间计的，客户端得先知道「换了房间」、
+     把自己的 lastSeq 清零，再收重放 —— 顺序反了，旧房间的大序号会
+     把新房间的小序号全吞掉，断线重连时就补不回来。 */
+  sendTo(c, JSON.stringify({t:'_joined', room:rname, seat:c.seat, head:r.seq,
+                            peers:r.clients.size, replayed:out.length}));
+  for(const x of out) sendTo(c, x);
+  announce(r);
+}
+function leaveRoom(c){
+  const r=c.room; if(!r) return;
+  r.clients.delete(c); c.room=null;
+  if(r.clients.size===0) r.emptyAt=Date.now(); else announce(r);
+}
+
+function presenceOf(code){
+  const set=users.get(code)||new Set(), m=meta.get(code)||{};
+  let web=false, board=false;
+  for(const c of set){ if(c.kind==='board') board=true; else web=true; }
+  return {t:'presence', code, online:web, desk:board, name:m.name||'', busy:!!m.busy};
+}
+function notifyPresence(code){
+  const w=subs.get(code); if(!w||!w.size) return;
+  const msg=JSON.stringify(presenceOf(code));
+  for(const c of w) sendTo(c,msg);
 }
 
 function handle(from,text){
-  const r=from.room;
   let m=null;
   try{ m=JSON.parse(text); }catch(e){}
   const t=m&&m.t;
 
-  if(t==='ping'){ sendTo(from, '{"t":"pong"}'); }
+  if(t==='ping'){ sendTo(from, '{"t":"pong"}'); return; }
+
+  /* 点名消息：跨房间，按好友码投递给那个人的所有网页连接。
+     邀请、接受、挂断、音视频信令、加好友都走这里——它们是找人，不是找房间，
+     也不进日志：来电被重放到断线前，就是幽灵来电。 */
+  if(m&&m.to&&from.code){
+    const to=String(m.to).toUpperCase();
+    m.from=from.code; m.name=(meta.get(from.code)||{}).name||m.name||'';
+    const out=JSON.stringify(m);
+    let n=0;
+    for(const c of users.get(to)||[]) if(c.kind==='web'&&c!==from){ sendTo(c,out); n++; }
+    if(n===0&&t!=='rtc') sendTo(from, JSON.stringify({t:'_undelivered', to, of:t}));
+    return;
+  }
+
+  /* 在线订阅：告诉我这些人在不在，之后变了也推给我 */
+  if(t==='who'&&Array.isArray(m.codes)){
+    for(const raw of m.codes.slice(0,200)){
+      const code=String(raw).toUpperCase(); if(!code) continue;
+      if(!subs.has(code)) subs.set(code,new Set());
+      subs.get(code).add(from); from.watching.add(code);
+      sendTo(from, JSON.stringify(presenceOf(code)));
+    }
+    return;
+  }
+
+  if(t==='busy'&&from.code){
+    const mm=meta.get(from.code)||{}; mm.busy=!!m.on; meta.set(from.code,mm);
+    notifyPresence(from.code); return;
+  }
+  if(t==='rename'&&from.code&&m.name){
+    const mm=meta.get(from.code)||{}; mm.name=String(m.name).slice(0,16); meta.set(from.code,mm);
+    notifyPresence(from.code); return;
+  }
+
+  /* 换房间。all=true 时这个人的所有连接一起走 —— 网页进了会话，
+     桌上的板子跟着进去，投影和识别自动接到这一局。 */
+  if(t==='join'&&m.room){
+    const target=String(m.room).slice(0,64);
+    const movers=(m.all&&from.code)?[...(users.get(from.code)||[])]:[from];
+    for(const c of movers){ if(c.room&&c.room.name===target) continue; leaveRoom(c); enter(c,target,0); }
+    log(from.code+' → 房间「'+target+'」（'+movers.length+' 个连接）');
+    return;
+  }
+
+  const r=from.room;
 
   if(!t || FAST.has(t)){ relay(r, from, text); return; }       // 快通路：转发即忘
 
@@ -154,19 +245,25 @@ function relay(r,from,text){
 function announce(r){
   const msg=JSON.stringify({t:'_peers', n:r.clients.size,
                             seats:[...r.clients].map(x=>x.seat)});
+  if(!r.clients.size) return;
   for(const c of r.clients) sendTo(c,msg);
 }
 function close(c){
+  if(c.closed) return; c.closed=true;
   const r=c.room;
-  if(!r||!r.clients.has(c)) return;
-  r.clients.delete(c);
   try{ c.socket.destroy(); }catch(e){}
-  log('#'+c.id+' 离开房间「'+r.name+'」（房内剩 '+r.clients.size+' 人）');
-  if(r.clients.size===0){
-    /* 房间空了但不立刻删 —— 两边都在重连时，状态要还在。
-       十分钟没人再回收。 */
-    r.emptyAt=Date.now();
-  }else announce(r);
+  if(r){
+    r.clients.delete(c); c.room=null;
+    log('#'+c.id+' 离开房间「'+r.name+'」（房内剩 '+r.clients.size+' 人）');
+    /* 房间空了但不立刻删 —— 两边都在重连时，状态要还在。十分钟没人再回收。 */
+    if(r.clients.size===0) r.emptyAt=Date.now(); else announce(r);
+  }
+  for(const code of c.watching){ const w=subs.get(code); if(w){ w.delete(c); if(!w.size) subs.delete(code); } }
+  if(c.code){
+    const set=users.get(c.code);
+    if(set){ set.delete(c); if(!set.size){ users.delete(c.code); const mm=meta.get(c.code); if(mm) mm.busy=false; } }
+    notifyPresence(c.code);
+  }
 }
 setInterval(()=>{
   const now=Date.now();

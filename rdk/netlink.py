@@ -26,10 +26,16 @@ FAST = {"frame", "ink", "ping", "pong", "cursor"}       # 丢了就丢了，不�
 
 
 class NetLink:
-    def __init__(self, url, room="default", seat="?", on_msg=None, on_state=None):
+    def __init__(self, url, room=None, seat=None, on_msg=None, on_state=None,
+                 user=None, kind="web", name=""):
+        """user 是好友码。带上它，服务端就知道「这是谁的设备」——
+        主人走进一局游戏时，板子会被一起带进去，不用单独配房间。"""
         self.url = url
-        self.room = room
-        self.seat = seat
+        self.user = (user or "").upper() or None
+        self.kind = kind
+        self.name = name
+        self.room = room or (f"u:{self.user}" if self.user else "default")
+        self.seat = seat or ((self.user + ("#board" if kind == "board" else "")) if self.user else "?")
         self.on_msg = on_msg or (lambda m: None)
         self.on_state = on_state or (lambda s: None)
         self.last_seq = 0
@@ -47,7 +53,15 @@ class NetLink:
         return self
 
     def stop(self):
+        """礼貌地走：先发 WebSocket 关闭帧，服务端立刻知道这个设备下线了。"""
         self._stop = True
+        with self._lock:
+            s = self.sock
+            if s is not None:
+                try:
+                    s.sendall(self._frame(b"\x03\xe8", 0x8))   # 1000 = 正常关闭
+                except Exception:
+                    pass
         self._close()
 
     def send(self, msg):
@@ -88,8 +102,12 @@ class NetLink:
         host = u.hostname
         port = u.port or (443 if u.scheme == "wss" else 80)
         path = u.path or "/ws"
-        q = urllib.parse.urlencode({"room": self.room, "seat": self.seat,
-                                    "since": self.last_seq})
+        params = {"room": self.room, "seat": self.seat, "since": self.last_seq}
+        if self.user:
+            params.update(user=self.user, kind=self.kind)
+            if self.name:
+                params["name"] = self.name
+        q = urllib.parse.urlencode(params)
         self.status = "连接中…"
         s = socket.create_connection((host, port), timeout=8)
         s.settimeout(None)
@@ -201,9 +219,16 @@ class NetLink:
             self.last_seq = seq
         t = m.get("t")
         if t == "_joined":
+            room = m.get("room")
+            if room and room != self.room:
+                # 换了房间：序号是按房间计的，旧的作废。重连时要回到这个新房间。
+                self.room = room
+                self.last_seq = 0
+                self.on_msg({"t": "_room", "room": room})
             self.peers = m.get("peers", 0)
+            self.status = f"已连接 房间「{self.room}」"
             if m.get("replayed"):
-                print(f"[net] 重连补发 {m['replayed']} 条", flush=True)
+                print(f"[net] 补发 {m['replayed']} 条", flush=True)
             return
         if t == "_peers":
             self.peers = m.get("n", 0)
@@ -219,6 +244,13 @@ class NetLink:
         with self._lock:
             s, self.sock = self.sock, None
         if s:
+            # 先 shutdown 再 close。另一个线程正阻塞在 recv 上时，光 close
+            # 在 macOS 上不会立刻发 FIN —— 服务端要等心跳超时（最长 10 秒）
+            # 才知道板子下线了，这段时间里对方看到的「在线」是假的。
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
             try:
                 s.close()
             except Exception:
