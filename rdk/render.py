@@ -8,6 +8,7 @@
 """
 import glob
 import os
+import time
 
 import pygame
 
@@ -69,7 +70,7 @@ class Renderer:
         c = side / (self.n - 1)
         return x0 + i * c, y0 + j * c
 
-    def draw(self, phys, remote, msg=None, show_hint=False):
+    def draw(self, phys, remote, msg=None, show_hint=False, points=None):
         """phys: 本端识别到的实体棋子（n*n）；remote: 对端传来的虚拟棋子（n*n）。"""
         s = self.screen
         s.fill(BG)
@@ -105,6 +106,42 @@ class Renderer:
         if msg:
             t = self.font.render(msg, True, GRID_EDGE)
             s.blit(t, (int(self.w * 0.04), int(self.h * 0.04)))
+        if points:
+            self.draw_points(points)
+        pygame.display.flip()
+
+    def draw_points(self, points, now=None):
+        """对方在网页上点一下，这里亮一个光点，两秒内淡掉。
+        坐标是相对投影方框的 0..1 —— 网页那边的折纸图和这里的方框是同一个坐标系，
+        所以「点在图上哪里」就「亮在纸上哪里」，前提是纸放在方框里。"""
+        now = now or time.time()
+        x0, y0, side = self.board_rect()
+        for (px, py, t0) in points:
+            age = now - t0
+            if age > 2.2:
+                continue
+            a = max(0.0, 1.0 - age / 2.2)
+            r = int(side * 0.035 * (1.0 + 0.6 * min(age, 0.3) / 0.3))
+            cx, cy = int(x0 + px * side), int(y0 + py * side)
+            glow = pygame.Surface((r * 6, r * 6), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (240, 178, 90, int(90 * a)), (r * 3, r * 3), r * 3)
+            pygame.draw.circle(glow, (240, 178, 90, int(200 * a)), (r * 3, r * 3), int(r * 1.6))
+            pygame.draw.circle(glow, (255, 240, 210, int(255 * a)), (r * 3, r * 3), r)
+            self.screen.blit(glow, (cx - r * 3, cy - r * 3))
+
+    def draw_origami(self, step, caption, points):
+        """折纸：投影只做引导——方框告诉老人纸放哪，顶上一行是这一步要做什么，
+        光点是对方指的位置。不识别纸，那是难题，这一版明确不碰。"""
+        s = self.screen
+        s.fill(BG)
+        x0, y0, side = self.board_rect()
+        pygame.draw.rect(s, GRID, (x0, y0, side, side), 2)
+        for k in (0.25, 0.5, 0.75):
+            pygame.draw.line(s, (60, 52, 40), (x0 + k * side, y0), (x0 + k * side, y0 + side), 1)
+            pygame.draw.line(s, (60, 52, 40), (x0, y0 + k * side), (x0 + side, y0 + k * side), 1)
+        t = self.font.render(f"第 {step + 1} 步  {caption}", True, GRID_EDGE)
+        s.blit(t, (int(x0), int(max(8, y0 - 40))))
+        self.draw_points(points)
         pygame.display.flip()
 
     def calib_pattern(self, note=None):

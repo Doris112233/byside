@@ -69,7 +69,7 @@ button:active{opacity:.6}
 
 <div class=card><div class=lbl>场景</div><div class=row>
   <button onclick="scene('gomoku')" id=sg>下棋</button>
-  <button onclick="scene('draw')" id=sd>画画</button>
+  <button onclick="scene('origami')" id=sd>折纸</button>
 </div></div>
 
 <div class=card><div class=lbl>状态</div><div class=st id=stat></div></div>
@@ -116,7 +116,7 @@ function tick(){
   document.getElementById('bc').classList.toggle('on',s.mode=='calib');
   document.getElementById('bp').classList.toggle('on',s.mode=='play');
   document.getElementById('sg').classList.toggle('on',s.scene=='gomoku');
-  document.getElementById('sd').classList.toggle('on',s.scene=='draw');
+  document.getElementById('sd').classList.toggle('on',s.scene=='origami');
   document.getElementById('stat').innerHTML=
    '<div><span>相机</span><b class="'+(s.fps>5?'ok':'bad')+'">'+s.fps.toFixed(1)+' fps</b></div>'+
    '<div><span>识别耗时</span><b>'+s.ms.toFixed(0)+' ms</b></div>'+

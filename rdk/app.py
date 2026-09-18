@@ -28,6 +28,14 @@ from framesource import FrameSource
 
 CFG_PATH = os.path.expanduser("~/.byside/config.json")
 N = 15
+# 和 app/index.html 里的 STEPS 一一对应；投影只显示文字，图在网页上
+ORIGAMI_STEPS = [
+    "把纸横过来，对折一次，折痕在上面",
+    "两个上角向中间折下来，变成一个三角",
+    "下面两条边，一前一后往上折",
+    "从底下撑开，压平成一个方块",
+    "捏住两个角往外一拉 —— 小船就出来了",
+]
 
 
 class App:
@@ -55,6 +63,8 @@ class App:
         self.remote = np.zeros(n * n, np.int8)
 
         self.link = None             # 中继连接，由 connect() 建立
+        self.points = []             # 对方指过来的光点 (x, y, t)
+        self.step = 0                # 折纸第几步（和网页端同步）
         self.room = "default"
         self.frame = None            # 最新彩色帧
         self.cls = np.zeros(n * n, np.int8)
@@ -89,7 +99,7 @@ class App:
             self.quad = [[float(p[0]), float(p[1])] for p in c["quad"]]
         if c.get("mode") in ("calib", "play"):
             self.mode = c["mode"]
-        if c.get("scene") in ("gomoku", "draw"):
+        if c.get("scene") in ("gomoku", "origami"):
             self.scene = c["scene"]
         if "margin" in c:
             self.margin = max(0.02, min(0.42, float(c["margin"])))
@@ -129,6 +139,21 @@ class App:
                 self.remote = np.zeros(n * n, np.int8)
         elif t in ("hello", "req"):
             self.publish_state()
+        elif t == "point":
+            x, y = m.get("x"), m.get("y")
+            if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                with self.lock:
+                    self.points.append((float(x), float(y), time.time()))
+                    del self.points[:-12]
+        elif t == "game":
+            g = m.get("g")
+            self.scene = g if g in ("gomoku", "origami") else "gomoku"
+            if g:
+                self.mode = "play"
+        elif t == "step":
+            n = m.get("n")
+            if isinstance(n, int):
+                self.step = max(0, min(len(ORIGAMI_STEPS) - 1, n))
 
     def publish_state(self):
         """把本端识别到的完整局面发出去 —— 对端拿它对账。"""
@@ -304,10 +329,15 @@ class App:
                 r.calib_pattern(note=f"等待相机  {self.cam_status}")
             elif self.mode == "calib":
                 r.calib_pattern()
+            elif self.scene == "origami":
+                with self.lock:
+                    pts = list(self.points)
+                r.draw_origami(self.step, ORIGAMI_STEPS[self.step], pts)
             else:
                 with self.lock:
                     phys = self.tracker.phys.copy()
-                r.draw(phys, self.remote, show_hint=True)
+                    pts = list(self.points)
+                r.draw(phys, self.remote, show_hint=True, points=pts)
             clock.tick(30)
         r.quit()
         if self.src:
