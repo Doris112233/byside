@@ -110,17 +110,42 @@ class App:
             self.save_cfg()
 
     # ---------- 联网 ----------
-    def connect(self, url, room):
-        """接中继。传的是位置不是画面 —— 一次落子几十字节。"""
-        self.room = room
-        self.link = NetLink(url, room=room, seat=self.seat or "?",
-                            on_msg=self.on_peer).start()
+    def connect(self, url, room=None, user=None):
+        """接中继。传的是位置不是画面 —— 一次落子几十字节。
+
+        带 user（主人的好友码）时，板子挂在主人名下：主人在网页上接受邀请、
+        进会话房间时，板子被中继一起带进去，不用单独配房间。"""
+        self.user = user
+        if user:
+            self.seat = None          # 等 role 告诉我这局认什么色
+            self.link = NetLink(url, user=user, kind="board", on_msg=self.on_peer).start()
+            self.room = self.link.room
+        else:
+            self.room = room or "home"
+            self.link = NetLink(url, room=self.room, seat=self.seat or "?",
+                                on_msg=self.on_peer).start()
         return self.link
 
     def on_peer(self, m):
         """收对端的消息。只认位置，不认画面。"""
         t = m.get("t")
         n = self.n
+        if t == "_room":
+            # 进了新房间：上一局对方投过来的子清掉，也先别认子，等 role
+            self.room = m.get("room")
+            with self.lock:
+                self.remote = np.zeros(n * n, np.int8)
+                self.points = []
+            if self.user:
+                self.seat = None
+            return
+        if t == "role":
+            # 主人这一局执什么色。只认自己主人的那条 —— 对方的 role 也会广播进房间
+            if self.user and m.get("code") == self.user and m.get("color") in (1, 2):
+                self.seat = "black" if m["color"] == 1 else "white"
+                self.tracker = bcv.StoneTracker(self.n)
+                print(f"[局] 这一局认 {self.seat}", flush=True)
+            return
         if t == "move":
             i, j, c = m.get("i"), m.get("j"), m.get("c", 0)
             if isinstance(i, int) and isinstance(j, int) and 0 <= i < n and 0 <= j < n:
@@ -237,7 +262,7 @@ class App:
             bp = self.bp(gray.shape)
             cls = None
             t0 = time.perf_counter()
-            if bp:
+            if bp and (self.seat or not getattr(self, "user", None)):
                 cls, _, cell = bcv.classify_abs(gray, bp, self.n, seat=self.seat)
                 self.cell = cell
             dt_ms = (time.perf_counter() - t0) * 1000
@@ -361,14 +386,17 @@ def main():
     ap.add_argument("--lock-exposure", action="store_true", help="USB 摄像头：关掉自动曝光/白平衡")
     ap.add_argument("--proc-width", type=int, default=960, help="识别用的处理宽度，0 = 用原图")
     ap.add_argument("--server", default="", help="中继地址，如 ws://1.2.3.4:8778/ws。留空则单机运行")
-    ap.add_argument("--room", default="home", help="房间号，两端必须一致")
+    ap.add_argument("--room", default="home", help="房间号，两端必须一致（旧模式；有 --user 时不用）")
+    ap.add_argument("--user", default="", help="主人的好友码。板子挂在主人名下，跟着主人进会话")
+    ap.add_argument("--headless", action="store_true", help="不开 pygame —— 投影交给板子上的浏览器")
     a = ap.parse_args()
 
     app = App(a.source, seat=None if a.seat == "both" else a.seat, proc_width=a.proc_width)
     app.want_lock_exposure = a.lock_exposure
     if a.server:
-        app.connect(a.server, a.room)
-        print(f"中继 {a.server}  房间「{a.room}」", flush=True)
+        user = a.user.upper().strip() or None
+        app.connect(a.server, a.room, user=user)
+        print(f"中继 {a.server}  " + (f"主人 {user}" if user else f"房间「{a.room}」"), flush=True)
     web.serve(app, a.port)
     import socket
     s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -380,7 +408,12 @@ def main():
     finally:
         s_.close()
     print(f"\n手机打开：http://{ip}:{a.port}/     （按 Q 或 Esc 退出）\n", flush=True)
-    app.run(fullscreen=not a.windowed)
+    if a.headless:
+        # 投影由浏览器负责，这里只做传感器：采集 → 识别 → 发坐标
+        app.mode = "play"
+        app.capture_loop()
+    else:
+        app.run(fullscreen=not a.windowed)
 
 
 if __name__ == "__main__":
