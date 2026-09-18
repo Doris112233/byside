@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#181A22">
+<title>咫尺 · 一起在桌边</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* ============================================================
+   咫尺 · 用户端。视觉沿用展示站：暖光落在深色木桌上，手绘描边，一笔笔画出来。
+   给老人用的，所以：字大、按钮大、每屏只做一件事、颜色只有暖光和夜色两种。
+   ============================================================ */
+:root{
+  --bg:#181A22; --ink:#F3EEE3; --ink-dim:#ABB0C2;
+  --line:rgba(243,238,227,.13); --surface:rgba(255,255,255,.045); --surface-line:rgba(255,255,255,.09);
+  --amber:#E0975A; --amber-soft:rgba(224,151,90,.15); --lamp:#F0B25A;
+  --indigo:#8CA2D6; --indigo-soft:rgba(140,162,214,.15);
+  --ok:#8FCFA8; --warn:#E0705A;
+  --font-display:"Noto Serif SC","Songti SC",serif;
+  --font-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"IBM Plex Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+  font-size:18px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow:hidden}
+h1,h2,h3{font-family:var(--font-display);margin:0;text-wrap:balance}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:active{transform:scale(.97)}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px;border-radius:8px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* 环境光 */
+.ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.glow{position:absolute;border-radius:50%;filter:blur(70px)}
+.glow-a{width:70vmax;height:70vmax;left:-20vmax;top:-30vmax;background:var(--lamp);opacity:.11}
+.glow-b{width:60vmax;height:60vmax;right:-25vmax;bottom:-20vmax;background:var(--indigo);opacity:.08}
+.vig-defs{position:absolute;width:0;height:0;overflow:hidden}
+
+/* 屏幕：一次只显示一个 */
+.screen{position:fixed;inset:0;z-index:1;display:none;flex-direction:column;align-items:center;
+  padding:max(24px,env(safe-area-inset-top)) 24px max(24px,env(safe-area-inset-bottom))}
+.screen.on{display:flex}
+@keyframes riseIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.screen.on>*{animation:riseIn .7s cubic-bezier(.16,1,.3,1) both}
+.screen.on>*:nth-child(2){animation-delay:.06s}.screen.on>*:nth-child(3){animation-delay:.12s}
+.screen.on>*:nth-child(4){animation-delay:.18s}.screen.on>*:nth-child(5){animation-delay:.24s}
+
+/* 手绘描边 */
+.hand{fill:none;stroke:var(--amber);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.dw{stroke-dasharray:100;stroke-dashoffset:100;animation:dw 5.4s ease-in-out infinite}
+@keyframes dw{0%{stroke-dashoffset:100}26%,84%{stroke-dashoffset:0}100%{stroke-dashoffset:100}}
+.br{animation:br 3.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center bottom}
+@keyframes br{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-1.6px) scaleY(1.015)}}
+.ht{opacity:0;animation:ht 5.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes ht{0%,60%{opacity:0;transform:translateY(4px) scale(.5)}70%{opacity:1;transform:translateY(-4px) scale(1)}86%{opacity:0;transform:translateY(-14px) scale(1)}100%{opacity:0}}
+.lampglow{animation:lamp 3.4s ease-in-out infinite}
+@keyframes lamp{0%,100%{opacity:.55}50%{opacity:.85}}
+
+/* ---------- 进门 ---------- */
+.door{justify-content:center;gap:28px;max-width:440px;margin:0 auto}
+.door .lampart{width:150px;height:auto}
+.door h1{font-size:40px;font-weight:900;letter-spacing:-.01em;line-height:1.15;text-align:center}
+.door h1 small{display:block;font-family:var(--font-body);font-weight:400;font-size:17px;color:var(--ink-dim);margin-top:10px;letter-spacing:.02em}
+.field{width:100%}
+.field label{display:block;font-size:15px;color:var(--ink-dim);margin:0 0 8px 4px}
+.field input{width:100%;font:inherit;font-size:24px;padding:16px 20px;border-radius:16px;color:var(--ink);
+  background:var(--surface);border:1.5px solid var(--surface-line);outline:none;transition:.15s}
+.field input:focus{border-color:var(--amber);background:var(--amber-soft)}
+.field input::placeholder{color:rgba(171,176,194,.45)}
+.hint{font-size:14px;color:var(--ink-dim);text-align:center;line-height:1.7;max-width:360px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:12px;font-size:22px;font-weight:700;
+  padding:18px 34px;border-radius:999px;background:var(--amber);color:#1a1510;min-height:64px;
+  box-shadow:0 8px 28px -10px rgba(224,151,90,.7);transition:.15s;letter-spacing:.02em}
+.btn:hover{background:var(--lamp)}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--surface-line);box-shadow:none}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.45;pointer-events:none}
+
+/* ---------- 家 ---------- */
+.home{justify-content:flex-start;gap:20px}
+.topbar{width:100%;max-width:760px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar .who{display:flex;align-items:center;gap:12px;font-size:16px;color:var(--ink-dim)}
+.topbar .who b{color:var(--ink);font-weight:500}
+.topbar .fam{font-family:var(--font-mono);font-size:13px;color:var(--amber);letter-spacing:.08em;
+  background:var(--amber-soft);padding:6px 12px;border-radius:999px}
+.home h2{font-size:30px;font-weight:900;margin-top:10px;text-align:center}
+.home h2 small{display:block;font-family:var(--font-body);font-weight:400;font-size:15px;color:var(--ink-dim);margin-top:6px}
+.people{width:100%;max-width:760px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:18px;margin-top:8px;overflow:auto;padding:6px}
+.person{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 18px 22px;
+  border-radius:22px;background:var(--surface);border:1.5px solid var(--surface-line);transition:.2s;width:100%}
+.person.online{border-color:rgba(224,151,90,.45);box-shadow:0 0 0 1px rgba(224,151,90,.15),0 12px 40px -18px rgba(240,178,90,.55)}
+.person.online:hover{background:var(--amber-soft);transform:translateY(-2px)}
+.person:not(.online){opacity:.45}
+.avatar{width:110px;height:110px;border-radius:50%;background:rgba(0,0,0,.18);border:1.5px solid var(--surface-line);
+  display:grid;place-items:center;overflow:hidden}
+.avatar svg{width:92px;height:92px}
+.person .nm{font-size:22px;font-weight:700}
+.person .st{font-size:14px;color:var(--ink-dim);display:flex;align-items:center;gap:7px}
+.person .st i{width:9px;height:9px;border-radius:50%;background:var(--ink-dim);display:inline-block}
+.person.online .st{color:var(--amber)}.person.online .st i{background:var(--amber);box-shadow:0 0 10px var(--lamp)}
+.person.busy .st{color:var(--indigo)}.person.busy .st i{background:var(--indigo)}
+.empty{color:var(--ink-dim);text-align:center;padding:40px 20px;font-size:16px;line-height:1.9;max-width:380px}
+.empty b{color:var(--ink);font-weight:500}
+.netpill{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:5;
+  font-family:var(--font-mono);font-size:12px;letter-spacing:.06em;color:var(--ink-dim);background:rgba(24,26,34,.85);
+  border:1px solid var(--line);padding:6px 14px;border-radius:999px;backdrop-filter:blur(8px);display:flex;gap:8px;align-items:center}
+.netpill i{width:7px;height:7px;border-radius:50%;background:var(--warn)}.netpill.ok i{background:var(--ok)}
+
+/* ---------- 来电 / 呼叫中 ---------- */
+.ring{justify-content:center;gap:26px;text-align:center}
+.ring .avatar{width:160px;height:160px}.ring .avatar svg{width:134px;height:134px}
+.ring h2{font-size:34px;font-weight:900}
+.ring h2 small{display:block;font-family:var(--font-body);font-weight:400;font-size:17px;color:var(--ink-dim);margin-top:8px}
+.ring .row{display:flex;gap:18px;margin-top:10px}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,151,90,.45)}60%{box-shadow:0 0 0 22px rgba(224,151,90,0)}}
+
+/* ---------- 通话 ---------- */
+.call{padding:0;justify-content:stretch;align-items:stretch}
+.stage{position:relative;flex:1;background:#0f1117;overflow:hidden}
+.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#0f1117}
+.stage .frame{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 3px rgba(224,151,90,.28),inset 0 0 120px rgba(0,0,0,.35)}
+.me{position:absolute;right:16px;top:max(16px,env(safe-area-inset-top));width:26%;max-width:200px;min-width:110px;aspect-ratio:3/4;
+  border-radius:16px;overflow:hidden;border:2px solid rgba(243,238,227,.35);background:#000;box-shadow:0 8px 30px -10px rgba(0,0,0,.6);z-index:3}
+.me video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.callname{position:absolute;left:18px;top:max(16px,env(safe-area-inset-top));z-index:3;display:flex;align-items:center;gap:10px;
+  background:rgba(24,26,34,.72);border:1px solid var(--line);padding:8px 16px 8px 10px;border-radius:999px;backdrop-filter:blur(8px);font-size:16px}
+.callname .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.callname .t{font-family:var(--font-mono);font-size:13px;color:var(--ink-dim)}
+.hearts{position:absolute;left:0;right:0;bottom:120px;pointer-events:none;z-index:2;display:flex;justify-content:center;gap:18px}
+.hearts svg{width:26px;height:26px}
+.dock{position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;justify-content:center;gap:22px;
+  padding:18px 18px max(22px,env(safe-area-inset-bottom));background:linear-gradient(to top,rgba(24,26,34,.9),rgba(24,26,34,0))}
+.dock button{display:flex;flex-direction:column;align-items:center;gap:7px;color:var(--ink);font-size:14px;font-weight:500}
+.dock .ico{width:74px;height:74px;border-radius:50%;background:rgba(24,26,34,.85);border:1.5px solid rgba(243,238,227,.22);
+  display:grid;place-items:center;transition:.15s;backdrop-filter:blur(8px)}
+.dock .ico svg{width:46px;height:46px}
+.dock button:hover .ico{border-color:var(--amber);background:var(--amber-soft)}
+.dock button.on .ico{background:var(--amber);border-color:var(--amber)}
+.dock button.on .ico svg{stroke:#1a1510}
+.dock button.end .ico{background:var(--warn);border-color:var(--warn)}
+.dock button.end .ico svg{stroke:#fff}
+
+/* ---------- 叠加层：从右侧滑进来，不遮脸 ---------- */
+.overlay{position:absolute;top:max(80px,calc(env(safe-area-inset-top) + 64px));bottom:130px;right:16px;z-index:3;
+  width:min(46%,420px);display:flex;flex-direction:column;gap:12px;
+  background:rgba(24,26,34,.86);border:1.5px solid var(--surface-line);border-radius:22px;padding:16px;
+  backdrop-filter:blur(12px);box-shadow:0 20px 60px -20px rgba(0,0,0,.7);overflow:auto;
+  transform:translateX(120%);transition:transform .35s cubic-bezier(.16,1,.3,1)}
+.overlay.on{transform:none}
+.overlay h3{font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+.overlay h3 span{font-family:var(--font-mono);font-size:12px;color:var(--amber);font-weight:500;letter-spacing:.06em}
+@media (max-width:640px){.overlay{left:12px;right:12px;width:auto;top:auto;bottom:126px;max-height:58vh}}
+
+/* 棋盘 */
+/* flex:none —— 不然在叠加层这个 flex 列里 aspect-ratio 会被 flex-shrink 压成一条 */
+.board{position:relative;flex:none;width:min(100%,44vh);margin:0 auto;aspect-ratio:1;border-radius:12px;background:#E8C98A;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.25);touch-action:none;overflow:hidden}
+.board canvas{position:absolute;inset:0;width:100%;height:100%}
+.turnline{display:flex;align-items:center;justify-content:space-between;font-size:15px;color:var(--ink-dim)}
+.turnline b{color:var(--ink);font-weight:500;display:flex;align-items:center;gap:8px}
+.stone-i{width:16px;height:16px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.3)}
+.stone-i.b{background:#222}.stone-i.w{background:#f4f1ea}
+.smallrow{display:flex;gap:8px}
+.smallrow button{flex:1;padding:10px;border-radius:12px;background:var(--surface);border:1px solid var(--surface-line);font-size:15px}
+.smallrow button:hover{border-color:var(--amber)}
+
+/* 折纸 */
+.paper{flex:none;width:100%;aspect-ratio:4/3;border-radius:12px;background:rgba(0,0,0,.2);border:1px solid var(--surface-line);
+  display:grid;place-items:center;position:relative;overflow:hidden;cursor:crosshair;touch-action:none}
+.paper svg{width:92%;height:auto}
+.paper .pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--lamp);
+  box-shadow:0 0 0 6px rgba(240,178,90,.35),0 0 30px var(--lamp);animation:pt 1.6s ease-out forwards;pointer-events:none}
+@keyframes pt{0%{transform:scale(.4);opacity:0}15%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:0}}
+.stepline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stepline .cap{font-size:16px;line-height:1.5;flex:1}
+.stepline .cap b{color:var(--amber);font-family:var(--font-mono);font-weight:500;margin-right:8px}
+.stepbtn{width:52px;height:52px;border-radius:50%;background:var(--surface);border:1.5px solid var(--surface-line);display:grid;place-items:center;font-size:22px}
+.stepbtn:hover{border-color:var(--amber)}
+.papertip{font-size:13.5px;color:var(--ink-dim);text-align:center}
+.papertip b{color:var(--lamp);font-weight:500}
+
+/* 提示条 */
+.toast{position:fixed;left:50%;top:max(18px,env(safe-area-inset-top));transform:translate(-50%,-140%);z-index:20;
+  background:rgba(24,26,34,.92);border:1px solid var(--amber);color:var(--ink);padding:12px 22px;border-radius:999px;
+  font-size:16px;transition:transform .35s cubic-bezier(.16,1,.3,1);backdrop-filter:blur(10px);max-width:90vw;text-align:center}
+.toast.on{transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="ambient"><div class="glow glow-a"></div><div class="glow glow-b"></div></div>
+<svg class="vig-defs" aria-hidden="true"><defs>
+  <filter id="rough" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="5" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.8"/>
+  </filter>
+  <radialGradient id="lampcone" cx="50%" cy="0%" r="80%">
+    <stop offset="0" stop-color="#F0B25A" stop-opacity=".5"/><stop offset="1" stop-color="#F0B25A" stop-opacity="0"/>
+  </radialGradient>
+  <!-- 手绘头像：四款，按名字散列选一个 -->
+  <g id="av-granny"><g filter="url(#rough)" class="hand"><circle cx="46" cy="44" r="17"/><path d="M 30,34 Q 46,18 62,34"/><circle cx="58" cy="24" r="6"/><circle cx="40" cy="46" r="4.6" stroke-width="1.4"/><circle cx="52" cy="46" r="4.6" stroke-width="1.4"/><path d="M 44.6,46 L 47.4,46" stroke-width="1.4"/><path d="M 41,55 Q 46,59 51,55" stroke-width="1.5"/><path d="M 24,84 Q 28,64 46,62 Q 64,64 68,84"/></g></g>
+  <g id="av-grandpa"><g filter="url(#rough)" class="hand"><circle cx="46" cy="44" r="17"/><path d="M 30,40 Q 46,26 62,40"/><path d="M 34,44 l 8,0 M 50,44 l 8,0" stroke-width="1.5"/><path d="M 36,60 Q 46,54 56,60" stroke-width="1.5"/><path d="M 40,54 Q 46,57 52,54" stroke-width="1.3"/><path d="M 24,84 Q 28,64 46,62 Q 64,64 68,84"/></g></g>
+  <g id="av-kid"><g filter="url(#rough)" class="hand"><circle cx="46" cy="46" r="16"/><path d="M 28,40 Q 46,22 64,40 L 70,38" /><circle cx="40" cy="47" r="1.8" fill="var(--amber)"/><circle cx="52" cy="47" r="1.8" fill="var(--amber)"/><path d="M 40,55 Q 46,61 52,55" stroke-width="1.6"/><path d="M 26,84 Q 30,66 46,64 Q 62,66 66,84"/></g></g>
+  <g id="av-mom"><g filter="url(#rough)" class="hand"><circle cx="46" cy="45" r="16"/><path d="M 28,52 Q 26,26 46,26 Q 66,26 64,52"/><path d="M 30,52 Q 30,40 36,34 M 62,52 Q 62,40 56,34" stroke-width="1.3" opacity=".7"/><circle cx="40" cy="47" r="1.8" fill="var(--amber)"/><circle cx="52" cy="47" r="1.8" fill="var(--amber)"/><path d="M 41,55 Q 46,59 51,55" stroke-width="1.5"/><path d="M 26,84 Q 30,66 46,64 Q 62,66 66,84"/></g></g>
+  <!-- 图标 -->
+  <g id="ic-go"><g class="hand" stroke-width="2.2"><path d="M 10,14 H 38 M 10,24 H 38 M 10,34 H 38 M 14,10 V 38 M 24,10 V 38 M 34,10 V 38" stroke-width="1.4" opacity=".55"/><circle cx="24" cy="24" r="6" fill="var(--amber)" stroke="none"/><circle cx="34" cy="14" r="5.4"/></g></g>
+  <g id="ic-paper"><g class="hand" stroke-width="2.2"><path d="M 8,32 L 24,10 L 40,32 Z"/><path d="M 24,10 L 24,32" stroke-width="1.5" opacity=".7"/><path d="M 6,36 Q 24,42 42,36"/></g></g>
+  <g id="ic-end"><g class="hand" stroke-width="2.4"><path d="M 10,30 Q 24,18 38,30 L 34,36 Q 24,30 14,36 Z" fill="currentColor" stroke="none"/></g></g>
+  <g id="ic-call"><g class="hand" stroke-width="2.4"><path d="M 14,10 L 20,14 L 18,20 Q 22,28 30,32 L 36,30 L 40,36 L 34,40 Q 12,36 8,16 Z"/></g></g>
+  <g id="ic-heart"><path d="M 12,21 C 4,15 4,7 9,6 c 2,0 3,1 3,2 c 0,-1 1,-2 3,-2 c 5,1 5,9 -3,15 z" fill="var(--amber)"/></g>
+</defs></svg>
+
+<!-- ================= 进门 ================= -->
+<section class="screen door" id="s-door">
+  <svg class="lampart" viewBox="0 0 170 150" role="img" aria-label="一盏暖光台灯">
+    <path d="M 55,52 L 115,52 L 150,140 L 20,140 Z" fill="url(#lampcone)" class="lampglow"/>
+    <g filter="url(#rough)" class="hand">
+      <g class="br"><path class="dw" pathLength="100" d="M 60,52 Q 85,30 110,52"/><path class="dw" pathLength="100" d="M 58,52 L 112,52" style="animation-delay:.1s"/>
+      <path class="dw" pathLength="100" d="M 85,30 Q 100,10 128,18" style="animation-delay:.2s"/><path class="dw" pathLength="100" d="M 128,18 L 132,60" style="animation-delay:.3s"/>
+      <path class="dw" pathLength="100" d="M 116,62 Q 132,66 148,62" style="animation-delay:.4s"/></g>
+      <path class="dw" pathLength="100" d="M 14,142 Q 85,138 156,142" stroke-width="1.5" opacity=".7" style="animation-delay:.5s"/>
+      <circle class="dw" pathLength="100" cx="70" cy="118" r="7" stroke-width="1.5" opacity=".8" style="animation-delay:.6s"/>
+      <circle class="dw" pathLength="100" cx="96" cy="124" r="7" stroke-width="1.5" opacity=".8" style="animation-delay:.7s"/>
+    </g>
+  </svg>
+  <h1>咫尺<small>相隔千里，坐到同一张桌边</small></h1>
+  <div class="field"><label for="nm">我叫</label><input id="nm" placeholder="奶奶 / 小宇 / 妈妈" maxlength="12" autocomplete="off"></div>
+  <div class="field"><label for="fam">家庭码</label><input id="fam" placeholder="一家人用同一个，比如 wang2026" maxlength="24" autocomplete="off"></div>
+  <button class="btn wide" id="b-enter">进门</button>
+  <p class="hint">家庭码是一家人的暗号，输一样的就能在同一张桌边见到彼此。</p>
+</section>
+
+<!-- ================= 家 ================= -->
+<section class="screen home" id="s-home">
+  <div class="topbar"><div class="who"><span>我是</span><b id="h-me">—</b></div><div class="fam" id="h-fam">—</div></div>
+  <h2>家里有谁在<small id="h-sub">灯亮着的，就是在的</small></h2>
+  <div class="people" id="people"></div>
+</section>
+
+<!-- ================= 呼叫中 / 来电 ================= -->
+<section class="screen ring" id="s-ring">
+  <div class="avatar pulse" id="r-av"></div>
+  <h2 id="r-title">正在叫 …<small id="r-sub"></small></h2>
+  <div class="row" id="r-row"></div>
+</section>
+
+<!-- ================= 通话 ================= -->
+<section class="screen call" id="s-call">
+  <div class="stage">
+    <video id="v-remote" autoplay playsinline></video>
+    <div class="frame"></div>
+    <div class="me"><video id="v-me" autoplay playsinline muted></video></div>
+    <div class="callname"><span class="dot"></span><b id="c-name">—</b><span class="t" id="c-time">00:00</span></div>
+    <div class="hearts" id="hearts"></div>
+
+    <!-- 下棋叠加层 -->
+    <div class="overlay" id="ov-go">
+      <h3>一起下棋 <span id="go-room"></span></h3>
+      <div class="board"><canvas id="cv"></canvas></div>
+      <div class="turnline"><b id="go-turn"><i class="stone-i b"></i>该黑棋了</b><span id="go-count">0 手</span></div>
+      <div class="smallrow"><button id="go-undo">悔一手</button><button id="go-reset">重来</button></div>
+    </div>
+
+    <!-- 折纸叠加层 -->
+    <div class="overlay" id="ov-paper">
+      <h3>一起折纸 · 小船 <span id="pp-step">1 / 5</span></h3>
+      <div class="paper" id="paper"></div>
+      <div class="stepline"><button class="stepbtn" id="pp-prev">‹</button><div class="cap" id="pp-cap"></div><button class="stepbtn" id="pp-next">›</button></div>
+      <p class="papertip">在图上<b>点一下</b>，对方桌上就会亮起一个光点</p>
+    </div>
+
+    <div class="dock">
+      <button id="d-go"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-go"/></svg></span>下棋</button>
+      <button id="d-paper"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-paper"/></svg></span>折纸</button>
+      <button id="d-end" class="end"><span class="ico"><svg viewBox="0 0 48 48" style="color:#fff"><use href="#ic-end"/></svg></span>挂断</button>
+    </div>
+  </div>
+</section>
+
+<div class="netpill" id="net"><i></i><span>连接中</span></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   状态。一个对象，所有屏幕都从它渲染。
+   ============================================================ */
+const S={
+  me:{name:'',fam:''},
+  peers:[],                // 家里在线的人（名字）
+  busy:new Set(),          // 正在通话中的人
+  call:{with:null,state:'idle',startedAt:0,caller:false},   // idle | calling | ringing | active
+  game:null,               // null | 'gomoku' | 'origami'
+  N:15, board:null, moves:[], turn:1,
+  step:0,
+};
+S.board=new Int8Array(S.N*S.N);
+const $=id=>document.getElementById(id);
+const AV=['av-granny','av-grandpa','av-kid','av-mom'];
+function avatarFor(name){ let h=0; for(const ch of name) h=(h*31+ch.charCodeAt(0))>>>0; return AV[h%AV.length]; }
+function avatarSVG(name){ return `<svg viewBox="0 0 92 92"><use href="#${avatarFor(name)}"/></svg>`; }
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $(id).classList.add('on'); }
+let toastT; function toast(msg,ms=2400){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),ms); }
+
+/* ============================================================
+   网络：走同一个中继。房间 = 家庭码，seat = 名字。
+   慢通路（move/state/game/step）服务端排序可重放；
+   快通路（call/rtc/point）转发即忘 —— 来电邀请重放到断线前就错了。
+   ============================================================ */
+const Net=(()=>{
+  let ws=null, timer=null, lastSeq=0, tries=0;
+  const base=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  function url(){ return base+'?room='+encodeURIComponent(S.me.fam)+'&seat='+encodeURIComponent(S.me.name)+'&since='+lastSeq; }
+  function connect(){
+    if(!S.me.fam) return;
+    let sock; try{ sock=new WebSocket(url()); }catch(e){ retry(); return; }
+    ws=sock;
+    sock.onopen=()=>{ tries=0; setNet(true); send({t:'hello'}); };
+    sock.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } handle(m); };
+    sock.onclose=()=>{ if(ws===sock){ ws=null; setNet(false); retry(); } };
+    sock.onerror=()=>{};
+  }
+  function retry(){ tries++; clearTimeout(timer); timer=setTimeout(connect, Math.min(3000, 500*Math.pow(1.5,Math.min(tries,6)))); }
+  function send(m){ m.seat=S.me.name; if(ws&&ws.readyState===1){ try{ ws.send(JSON.stringify(m)); }catch(e){} } }
+  function handle(m){
+    if(typeof m.seq==='number'&&m.seq>lastSeq) lastSeq=m.seq;
+    if(m.t==='_joined'||m.t==='_peers'){ if(m.seats) setPeers(m.seats); return; }
+    if(m.seat===S.me.name) return;
+    if(m.to&&m.to!==S.me.name) return;          // 点名消息不是给我的
+    switch(m.t){
+      case 'hello': send({t:'state',moves:S.moves,N:S.N}); if(S.call.state==='active') send({t:'busy',on:true}); break;
+      case 'busy': m.on?S.busy.add(m.seat):S.busy.delete(m.seat); renderHome(); break;
+      case 'call': onIncoming(m.seat); break;
+      case 'accept': onAccepted(m.seat); break;
+      case 'reject': if(S.call.with===m.seat){ endCall(false); toast(m.seat+' 现在不方便'); } break;
+      case 'hangup': if(S.call.with===m.seat){ endCall(false); toast(m.seat+' 挂断了'); } break;
+      case 'rtc': RTC.onSignal(m); break;
+      case 'game': if(S.call.state==='active') setGame(m.g,false); break;
+      case 'move': applyMove(m.i,m.j,m.c); break;
+      case 'undo': if(S.moves.length>m.ply) undoLocal(); break;
+      case 'reset': resetLocal(); break;
+      case 'state': applyState(m); break;
+      case 'step': if(S.call.state==='active'){ S.step=m.n; renderPaper(); } break;
+      case 'point': showPoint(m.x,m.y); break;
+    }
+  }
+  function setNet(ok){ const n=$('net'); n.classList.toggle('ok',ok); n.querySelector('span').textContent=ok?'已连上':'连接中'; }
+  return {connect,send};
+})();
+function setPeers(seats){ S.peers=[...new Set(seats.filter(s=>s&&s!=='?'&&s!==S.me.name))]; renderHome(); }
+
+/* ============================================================
+   进门
+   ============================================================ */
+try{ const saved=JSON.parse(localStorage.getItem('byside.me')||'{}'); if(saved.name) $('nm').value=saved.name; if(saved.fam) $('fam').value=saved.fam; }catch(e){}
+$('b-enter').onclick=()=>{
+  const name=$('nm').value.trim(), fam=$('fam').value.trim().toLowerCase();
+  if(!name){ $('nm').focus(); toast('先告诉我你叫什么'); return; }
+  if(!fam){ $('fam').focus(); toast('家庭码填一下，一家人用同一个'); return; }
+  S.me={name,fam}; try{ localStorage.setItem('byside.me',JSON.stringify(S.me)); }catch(e){}
+  $('h-me').textContent=name; $('h-fam').textContent=fam;
+  show('s-home'); renderHome(); Net.connect();
+};
+['nm','fam'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') $('b-enter').click(); }));
+
+/* ============================================================
+   家：谁在线
+   ============================================================ */
+function renderHome(){
+  const box=$('people'); box.innerHTML='';
+  if(!S.peers.length){
+    box.innerHTML=`<div class="empty" style="grid-column:1/-1">家里现在只有你一个人。<br>让家人在他们那边也输入家庭码 <b>${S.me.fam}</b>，灯就会亮起来。</div>`;
+    return;
+  }
+  for(const p of S.peers){
+    const busy=S.busy.has(p);
+    const el=document.createElement('button');
+    el.className='person online'+(busy?' busy':'');
+    el.innerHTML=`<div class="avatar">${avatarSVG(p)}</div><div class="nm">${p}</div><div class="st"><i></i>${busy?'正在通话':'在桌边'}</div>`;
+    el.onclick=()=>{ if(busy){ toast(p+' 正在和别人通话'); return; } startCall(p); };
+    box.appendChild(el);
+  }
+}
+
+/* ============================================================
+   呼叫 / 来电
+   ============================================================ */
+function ringScreen(who,title,sub,buttons){
+  $('r-av').innerHTML=avatarSVG(who);
+  $('r-title').firstChild.textContent=title; $('r-sub').textContent=sub;
+  const row=$('r-row'); row.innerHTML='';
+  for(const [label,cls,fn] of buttons){ const b=document.createElement('button'); b.className='btn '+cls; b.textContent=label; b.onclick=fn; row.appendChild(b); }
+  show('s-ring');
+}
+async function startCall(who){
+  if(!(await RTC.prepare())) return;
+  S.call={with:who,state:'calling',startedAt:0,caller:true};
+  Net.send({t:'call',to:who});
+  ringScreen(who,'正在叫 '+who,'铃响了，等一下',[['取消','ghost',()=>{ Net.send({t:'hangup',to:who}); endCall(false); }]]);
+}
+function onIncoming(who){
+  if(S.call.state!=='idle'){ Net.send({t:'reject',to:who}); return; }
+  S.call={with:who,state:'ringing',startedAt:0,caller:false};
+  ringScreen(who,who+' 找你','想和你坐一会儿',[['接','',async()=>{ if(!(await RTC.prepare())) return; Net.send({t:'accept',to:who}); beginCall(); }],['先不了','ghost',()=>{ Net.send({t:'reject',to:who}); endCall(false); }]]);
+  try{ navigator.vibrate&&navigator.vibrate([300,200,300]); }catch(e){}
+}
+function onAccepted(who){ if(S.call.state==='calling'&&S.call.with===who){ beginCall(); RTC.offer(who); } }
+function beginCall(){
+  S.call.state='active'; S.call.startedAt=Date.now();
+  $('c-name').textContent=S.call.with; show('s-call'); Net.send({t:'busy',on:true});
+  $('hearts').innerHTML=[0,1,2].map(k=>`<svg viewBox="0 0 24 24" class="ht" style="animation-delay:${k*.9}s"><use href="#ic-heart"/></svg>`).join('');
+  tick();
+}
+let tickT; function tick(){ clearTimeout(tickT); if(S.call.state!=='active') return; const s=Math.floor((Date.now()-S.call.startedAt)/1000); $('c-time').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); tickT=setTimeout(tick,1000); }
+function endCall(notify=true){
+  if(notify&&S.call.with) Net.send({t:'hangup',to:S.call.with});
+  if(S.call.state==='active') Net.send({t:'busy',on:false});
+  RTC.close(); setGame(null,false);
+  S.call={with:null,state:'idle',startedAt:0,caller:false};
+  show('s-home'); renderHome();
+}
+$('d-end').onclick=()=>endCall(true);
+
+/* ============================================================
+   音视频：浏览器原生 WebRTC，信令走中继。
+   以后换声网只动这一个对象 —— prepare/offer/onSignal/close 四个口子不变。
+   ============================================================ */
+const RTC=(()=>{
+  let pc=null, local=null;
+  const ICE=[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.qq.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
+  async function prepare(){
+    if(local) return true;
+    try{ local=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280}},audio:{echoCancellation:true,noiseSuppression:true}}); }
+    catch(e){
+      /* 没给权限也让进：老人的平板可能没开摄像头，但棋盘和折纸照样能用。 */
+      toast('没拿到摄像头/麦克风权限，先用没画面的方式一起坐一会儿',3600); local=null; return true;
+    }
+    $('v-me').srcObject=local; return true;
+  }
+  function make(who){
+    pc=new RTCPeerConnection({iceServers:ICE});
+    if(local) local.getTracks().forEach(tr=>pc.addTrack(tr,local));
+    else { pc.addTransceiver('video',{direction:'recvonly'}); pc.addTransceiver('audio',{direction:'recvonly'}); }
+    pc.ontrack=e=>{ $('v-remote').srcObject=e.streams[0]; };
+    pc.onicecandidate=e=>{ if(e.candidate) Net.send({t:'rtc',to:who,ice:e.candidate}); };
+    pc.onconnectionstatechange=()=>{ if(pc&&['failed','disconnected'].includes(pc.connectionState)) toast('画面断了，正在重连…'); };
+    return pc;
+  }
+  async function offer(who){ make(who); const o=await pc.createOffer(); await pc.setLocalDescription(o); Net.send({t:'rtc',to:who,sdp:pc.localDescription}); }
+  async function onSignal(m){
+    if(S.call.with!==m.seat) return;
+    if(m.sdp){
+      if(m.sdp.type==='offer'){ if(!pc) make(m.seat); await pc.setRemoteDescription(m.sdp); const a=await pc.createAnswer(); await pc.setLocalDescription(a); Net.send({t:'rtc',to:m.seat,sdp:pc.localDescription}); }
+      else if(pc){ await pc.setRemoteDescription(m.sdp); }
+    }else if(m.ice&&pc){ try{ await pc.addIceCandidate(m.ice); }catch(e){} }
+  }
+  function close(){ if(pc){ try{pc.close();}catch(e){} pc=null; } $('v-remote').srcObject=null; }
+  return {prepare,offer,onSignal,close};
+})();
+
+/* ============================================================
+   叠加层：下棋 / 折纸。game 走慢通路，两边同步开关。
+   ============================================================ */
+function setGame(g,broadcast=true){
+  S.game=g;
+  $('ov-go').classList.toggle('on',g==='gomoku'); $('ov-paper').classList.toggle('on',g==='origami');
+  $('d-go').classList.toggle('on',g==='gomoku'); $('d-paper').classList.toggle('on',g==='origami');
+  if(g==='gomoku') drawBoard(); if(g==='origami') renderPaper();
+  if(broadcast) Net.send({t:'game',g});
+}
+$('d-go').onclick=()=>setGame(S.game==='gomoku'?null:'gomoku');
+$('d-paper').onclick=()=>setGame(S.game==='origami'?null:'origami');
+
+/* ---- 五子棋 ---- */
+const cv=$('cv'), ctx=cv.getContext('2d');
+function drawBoard(){
+  const box=cv.parentElement, w=box.clientWidth||300; cv.width=w*devicePixelRatio; cv.height=w*devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); ctx.clearRect(0,0,w,w);
+  const N=S.N, pad=w*.05, c=(w-2*pad)/(N-1);
+  ctx.strokeStyle='rgba(60,40,20,.55)'; ctx.lineWidth=1;
+  for(let k=0;k<N;k++){ ctx.beginPath(); ctx.moveTo(pad,pad+k*c); ctx.lineTo(w-pad,pad+k*c); ctx.stroke(); ctx.beginPath(); ctx.moveTo(pad+k*c,pad); ctx.lineTo(pad+k*c,w-pad); ctx.stroke(); }
+  ctx.fillStyle='rgba(60,40,20,.7)'; for(const [i,j] of [[3,3],[11,3],[3,11],[11,11],[7,7]]){ ctx.beginPath(); ctx.arc(pad+i*c,pad+j*c,c*.12,0,7); ctx.fill(); }
+  const last=S.moves[S.moves.length-1];
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const v=S.board[j*N+i]; if(!v) continue;
+    const x=pad+i*c, y=pad+j*c, r=c*.44;
+    const g=ctx.createRadialGradient(x-r*.35,y-r*.35,r*.1,x,y,r);
+    if(v===1){ g.addColorStop(0,'#555'); g.addColorStop(1,'#111'); } else { g.addColorStop(0,'#fff'); g.addColorStop(1,'#d9d4c7'); }
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+    if(last&&last[0]===i&&last[1]===j){ ctx.strokeStyle='var(--amber)'; ctx.strokeStyle='#E0975A'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,r*.45,0,7); ctx.stroke(); }
+  }
+  $('go-turn').innerHTML=`<i class="stone-i ${S.turn===1?'b':'w'}"></i>该${S.turn===1?'黑':'白'}棋了`;
+  $('go-count').textContent=S.moves.length+' 手';
+  const win=winner(); if(win){ $('go-turn').innerHTML=`<i class="stone-i ${win===1?'b':'w'}"></i>${win===1?'黑':'白'}棋赢了 🎉`; }
+}
+function cellAt(e){ const r=cv.getBoundingClientRect(), w=r.width, pad=w*.05, c=(w-2*pad)/(S.N-1);
+  const t=e.touches?e.touches[0]:e; const i=Math.round((t.clientX-r.left-pad)/c), j=Math.round((t.clientY-r.top-pad)/c);
+  return (i>=0&&j>=0&&i<S.N&&j<S.N)?[i,j]:null; }
+cv.addEventListener('pointerdown',e=>{ const p=cellAt(e); if(!p) return; const [i,j]=p; if(S.board[j*S.N+i]||winner()) return;
+  const c=S.turn; applyMove(i,j,c); Net.send({t:'move',i,j,c,ply:S.moves.length-1}); });
+function applyMove(i,j,c){ if(S.board[j*S.N+i]) return; S.board[j*S.N+i]=c; S.moves.push([i,j,c]); S.turn=c===1?2:1; if(S.game==='gomoku') drawBoard(); }
+function undoLocal(){ const m=S.moves.pop(); if(!m) return; S.board[m[1]*S.N+m[0]]=0; S.turn=m[2]; drawBoard(); }
+function resetLocal(){ S.board.fill(0); S.moves=[]; S.turn=1; drawBoard(); }
+function applyState(m){ if(!m.moves) return; S.board.fill(0); S.moves=[]; S.turn=1; for(const [i,j,c] of m.moves) applyMove(i,j,c); drawBoard(); }
+function winner(){ const N=S.N,b=S.board; for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const v=b[j*N+i]; if(!v) continue;
+  for(const [di,dj] of [[1,0],[0,1],[1,1],[1,-1]]){ let k=1; while(k<5){ const x=i+di*k,y=j+dj*k; if(x<0||y<0||x>=N||y>=N||b[y*N+x]!==v) break; k++; } if(k===5) return v; } } return 0; }
+$('go-undo').onclick=()=>{ if(!S.moves.length) return; Net.send({t:'undo',ply:S.moves.length}); undoLocal(); };
+$('go-reset').onclick=()=>{ Net.send({t:'reset'}); resetLocal(); };
+window.addEventListener('resize',()=>{ if(S.game==='gomoku') drawBoard(); });
+
+/* ---- 折纸：小船，五步。图是手绘描边，点一下发光点给对方桌面 ---- */
+const STEPS=[
+  ['把纸横过来，对折一次，折痕在上面',        `<path d="M 20,30 H 180 V 120 H 20 Z"/><path d="M 20,75 H 180" stroke-dasharray="6 5" opacity=".7"/><path d="M 100,58 l 0,-18 m -6,6 l 6,-6 l 6,6" stroke-width="1.6"/>`],
+  ['两个上角向中间折下来，变成一个三角',        `<path d="M 20,120 H 180 L 100,30 Z"/><path d="M 100,30 V 120" stroke-dasharray="6 5" opacity=".6"/><path d="M 40,60 q 20,-15 40,-8 M 160,60 q -20,-15 -40,-8" stroke-width="1.5" opacity=".8"/>`],
+  ['下面两条边，一前一后往上折',            `<path d="M 20,100 H 180 L 100,30 Z"/><path d="M 20,100 H 180 V 120 H 20 Z"/><path d="M 100,112 l 0,-14 m -5,5 l 5,-5 l 5,5" stroke-width="1.6"/>`],
+  ['从底下撑开，压平成一个方块',            `<path d="M 55,40 H 145 L 145,125 H 55 Z"/><path d="M 55,40 L 145,125 M 145,40 L 55,125" stroke-dasharray="5 5" opacity=".5"/><path d="M 30,82 l 18,0 m -6,-6 l 6,6 l -6,6 M 170,82 l -18,0 m 6,-6 l -6,6 l 6,6" stroke-width="1.5"/>`],
+  ['捏住两个角往外一拉 —— 小船就出来了',         `<path d="M 20,100 Q 100,125 180,100 L 160,125 H 40 Z"/><path d="M 60,100 L 100,45 L 140,100" /><path d="M 100,45 V 100" stroke-dasharray="5 4" opacity=".6"/><path d="M 25,88 q -8,-6 -4,-14 M 175,88 q 8,-6 4,-14" stroke-width="1.5"/>`],
+];
+function renderPaper(){
+  const [cap,art]=STEPS[Math.max(0,Math.min(STEPS.length-1,S.step))];
+  $('pp-step').textContent=(S.step+1)+' / '+STEPS.length;
+  $('pp-cap').innerHTML=`<b>第 ${S.step+1} 步</b>${cap}`;
+  $('paper').innerHTML=`<svg viewBox="0 0 200 150"><g filter="url(#rough)" class="hand" stroke-width="2">${art}</g></svg>`;
+}
+function setStep(n){ S.step=Math.max(0,Math.min(STEPS.length-1,n)); renderPaper(); Net.send({t:'step',n:S.step}); }
+$('pp-prev').onclick=()=>setStep(S.step-1); $('pp-next').onclick=()=>setStep(S.step+1);
+$('paper').addEventListener('pointerdown',e=>{ const r=$('paper').getBoundingClientRect();
+  const x=(e.clientX-r.left)/r.width, y=(e.clientY-r.top)/r.height; showPoint(x,y); Net.send({t:'point',x,y}); });
+function showPoint(x,y){ if(S.game!=='origami') return; const d=document.createElement('i'); d.className='pt'; d.style.left=(x*100)+'%'; d.style.top=(y*100)+'%'; $('paper').appendChild(d); setTimeout(()=>d.remove(),1700); }
+
+/* 进门页先出来 */
+show('s-door'); renderPaper();
+</script>
+</body>
+</html>

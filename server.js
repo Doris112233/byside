@@ -18,6 +18,7 @@ const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 function serve(req,res){
   let p=decodeURIComponent((req.url||'/').split('?')[0]);
   if(p==='/'||p==='') p='/index.html';
+  if(p==='/app'||p==='/app/') p='/app/index.html';
   const file=path.join(ROOT,path.normalize(p).replace(/^(\.\.[/\\])+/,''));
   if(!file.startsWith(ROOT)){ res.writeHead(403).end('forbidden'); return; }
   fs.readFile(file,(err,buf)=>{
@@ -42,7 +43,8 @@ let cid=0;
    慢通路  落子/悔棋/重开/全量状态 —— 分配序号、存进日志、断线能重放
    快通路  ROI 预览帧、笔迹点流、心跳 —— 转发即忘，丢了就丢了
    画画的笔迹必须走快通路：等不起稳定判定，也不该把每个点都塞进日志。 */
-const FAST=new Set(['frame','ink','ping','pong','cursor']);
+const FAST=new Set(['frame','ink','ping','pong','cursor',
+                    'call','accept','reject','hangup','rtc','point','busy']);
 const LOG_MAX=500;
 
 function room(name){
