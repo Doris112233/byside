@@ -97,6 +97,24 @@ scripts/rdk-setup.sh --name 奶奶 --local-relay      # 局域网自测
 Chromium/Firefox 是 snap 包，能不能跑、带不带得动视频通话要开机验证。
 另外板子如果只有一个摄像头，它被桌面识别占着，视频通话会退成只有声音。
 
+### 云服务器（跨城必需）
+
+两个人在不同城市，中继得放在两边都连得上的地方，而且要 HTTPS（摄像头和声网都要求）。
+
+推荐**腾讯云轻量 · 香港 · 锐驰型**（约 40 元/月）：香港不用备案、当天能用，到大陆延迟
+30–50ms，支付宝付款。别选入门型——腾讯云写明它不保证到大陆的跨境网络质量。
+域名在同一个后台买个 .com，做实名认证（当天通过，和备案不是一回事）。
+
+买好之后，控制台里先做两件事：域名 A 记录指到服务器 IP；防火墙放行 80 和 443。然后：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Doris112233/byside/claude/charming-wilbur-abc0c7/scripts/server-setup.sh -o setup.sh
+sudo bash setup.sh --domain byside.你的域名.com
+```
+
+装 node + Caddy（自动申请续期 HTTPS 证书，天然支持 WebSocket），问你要声网证书
+（只存在服务器上）。之后 `https://你的域名/app/` 就是桌面界面，两边都连它。
+
 ### 声网
 
 项目开了 App 证书，所以音视频要 token。**证书只放在跑中继的那台机器上**：

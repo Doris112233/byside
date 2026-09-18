@@ -352,7 +352,8 @@ function lanIPs(){
 
 const httpSrv=http.createServer(serve);
 httpSrv.on('upgrade',onUpgrade);
-httpSrv.listen(HTTP_PORT,'0.0.0.0',()=>{
+/* 放在 Caddy 后面时设 BIND=127.0.0.1：外面只能经 Caddy 的 HTTPS 进来，中继自己的明文端口不对外 */
+httpSrv.listen(HTTP_PORT,process.env.BIND||'0.0.0.0',()=>{
   log('HTTP  监听 '+HTTP_PORT);
   log(AGORA.appId&&AGORA.cert?'声网 token 签发已启用（App ID '+AGORA.appId.slice(0,6)+'…）':'未配置声网证书 —— 网页将退回原生 WebRTC');
 });
