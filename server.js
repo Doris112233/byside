@@ -18,7 +18,7 @@ const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 function serve(req,res){
   let p=decodeURIComponent((req.url||'/').split('?')[0]);
   if(p==='/'||p==='') p='/index.html';
-  if(p==='/app'||p==='/app/') p='/app/index.html';
+  if(p==='/app'||p==='/app/') p='/docs/app/index.html';
   const file=path.join(ROOT,path.normalize(p).replace(/^(\.\.[/\\])+/,''));
   if(!file.startsWith(ROOT)){ res.writeHead(403).end('forbidden'); return; }
   fs.readFile(file,(err,buf)=>{
@@ -320,6 +320,13 @@ function close(c){
     notifyPresence(c.code);
   }
 }
+/* 每分钟一行状态。在 Codespaces 的终端里跑时，终端有输出就不算闲置 ——
+   不然中继安安静静地转着，半小时后 Codespace 会以为没人在用、自己关掉。 */
+setInterval(()=>{
+  let n=0; for(const r of rooms.values()) n+=r.clients.size;
+  log('在线 '+users.size+' 人 · '+n+' 个连接 · '+rooms.size+' 个房间');
+},60000);
+
 setInterval(()=>{
   const now=Date.now();
   for(const [name,r] of rooms){

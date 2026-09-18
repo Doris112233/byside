@@ -1,0 +1,11 @@
+{
+  // 咫尺 · 中继跑在 GitHub Codespaces 上。
+  // Codespaces 是开发环境不是服务器：闲置 30 分钟会停（最长可设 4 小时）。
+  // 适合测试和演示那几个小时，不适合长期挂着。
+  "name": "咫尺 中继",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "forwardPorts": [8778],
+  "portsAttributes": { "8778": { "label": "咫尺中继", "onAutoForward": "silent" } },
+  // 声网证书从 Codespaces 的密钥里来（AGORA_APP_ID / AGORA_APP_CERT），不进仓库
+  "postStartCommand": "nohup node server.js > /tmp/relay.log 2>&1 &"
+}

@@ -13,6 +13,10 @@
 <meta name="agora-app-id" content="ed991ae46d4a404ca2d5347633e3916c">
 <meta name="agora-token" content="">
 <meta name="agora-channel" content="">
+<!-- 中继地址。留空 = 和网页同一台机器（本机、板子、隧道都是这样）。
+     网页放在 GitHub Pages 上时，Pages 跑不了程序，中继在别处（比如 Codespaces），
+     就填在这里，或者打开一次 ?relay=wss://…/ws（会记住，?relay=off 清掉）。 -->
+<meta name="relay" content="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
@@ -539,7 +543,16 @@ const Nav=(()=>{
 const Net=(()=>{
   let ws=null, timer=null, tries=0, lastSeq=0, room=null;
   const asks=[];      // 等服务端回话的请求（目前只有要声网 token）
-  const base=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  const base=(()=>{
+    const q=new URLSearchParams(location.search).get('relay');
+    if(q==='off'){ try{ localStorage.removeItem('byside.relay'); }catch(e){} }
+    else if(q){ try{ localStorage.setItem('byside.relay',q); }catch(e){} }
+    let r=''; try{ r=localStorage.getItem('byside.relay')||''; }catch(e){}
+    if(!r) r=(document.querySelector('meta[name="relay"]')||{}).content||'';
+    r=r.trim();
+    if(r) return r.replace(/^http/,'ws').replace(/\/?$/,'').replace(/(\/ws)?$/,'/ws');
+    return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+  })();
   function url(){
     const q=new URLSearchParams({user:ME.code,kind:'web',name:ME.name,since:String(lastSeq)});
     if(room) q.set('room',room);
@@ -1131,7 +1144,7 @@ const Origami=(()=>{
   else if(P.get('name')) me={code:(me&&me.code)||newCode(),name:P.get('name')};
   const pendingAdd=(P.get('add')||'').toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,6);
   if(pendingAdd) try{ sessionStorage.setItem('byside.pendingAdd',pendingAdd); }catch(e){}
-  if([...P.keys()].some(k=>['surface','name','user','add','agora','token','channel'].includes(k)))
+  if([...P.keys()].some(k=>['surface','name','user','add','agora','token','channel','relay'].includes(k)))
     history.replaceState(null,'',location.pathname);
 
   if(me&&me.name){ ME=me; store.me=me; enter(); }
