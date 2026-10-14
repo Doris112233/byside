@@ -10,8 +10,16 @@
 #  用法：
 #    scripts/pc.sh --name 奶奶                       第一次，自动生成好友码
 #    scripts/pc.sh --name 奶奶 --camera 1            用第二个摄像头（0 通常是笔记本自带那个）
+#    scripts/pc.sh --name 奶奶 --camera auto         Mac 上自动找影石（Insta360）那只
 #    scripts/pc.sh --camera http://手机IP:8080/video 用手机当摄像头
 #    scripts/pc.sh --server wss://你的域名/ws        不起本机中继，连云上的
+#    scripts/pc.sh --server ws://192.168.1.5:8778/ws 同一个 Wi-Fi 下连另一台电脑起的中继
+#
+#  两台电脑同一个 Wi-Fi 的跑法：
+#    甲：scripts/pc.sh --name 甲                           （起中继，终端会打印本机 IP）
+#    乙：scripts/pc.sh --name 乙 --server ws://甲的IP:8778/ws
+#    乙的浏览器会走 https://甲的IP:8443/app/ —— 不是 localhost 的页面必须 HTTPS 才能开摄像头，
+#    甲那边要有 cert.pem/key.pem（README 里有一行 openssl 生成）。
 # ============================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,6 +45,18 @@ done
 if [ -z "$CAMERA" ]; then
   if [ "$(uname)" = Darwin ]; then CAMERA=1; CAM_NOTE="（默认用外接的 1 号；0 号是笔记本自带那个、朝着你的脸，留给视频通话）"
   else CAMERA=0; CAM_NOTE=""; fi
+fi
+# --camera auto：Mac 上按名字找影石。OpenCV 的索引顺序和 system_profiler 列出来的顺序一致。
+if [ "$CAMERA" = auto ]; then
+  if [ "$(uname)" = Darwin ]; then
+    CAMERA="$(system_profiler SPCameraDataType -json 2>/dev/null | python3 -c '
+import json,sys,re
+cams=[c.get("_name","") for c in json.load(sys.stdin).get("SPCameraDataType",[])]
+hit=[i for i,n in enumerate(cams) if re.search(r"insta\s*360|影石|link", n, re.I)]
+print(hit[0] if hit else 1)
+print("  相机列表: "+" | ".join(f"{i}:{n}" for i,n in enumerate(cams)), file=sys.stderr)')"
+    CAM_NOTE="（auto：按名字找到影石；不对就 --camera 0/1/2 换）"
+  else CAMERA=0; CAM_NOTE="（auto 只在 Mac 上按名字找，Linux 用 0）"; fi
 fi
 
 # ---------- 身份：好友码存在本机，下次自动用 ----------
@@ -74,7 +94,14 @@ if [ -z "$SERVER" ]; then
   WEB="http://localhost:$PORT"
 else
   WEB="$(echo "$SERVER" | sed -e 's#^ws://#http://#' -e 's#^wss://#https://#' -e 's#/ws$##')"
+  # 连的是局域网里另一台电脑的明文中继（ws://IP:8778）：识别端走 ws 没问题，
+  # 但浏览器页面不是 localhost 就必须 HTTPS 才给开摄像头/麦克风 —— 换到那台机器的 8443。
+  case "$WEB" in
+    http://localhost*|http://127.0.0.1*) ;;
+    http://*) WEB="https://$(echo "$WEB" | sed -e 's#^http://##' -e 's#:[0-9]*$##'):8443"; CHROME_EXTRA="--ignore-certificate-errors";;
+  esac
 fi
+CHROME_EXTRA="${CHROME_EXTRA:-}"
 
 # ---------- 识别（和板子上是同一个程序） ----------
 "$PY" rdk/app.py --headless --source "$CAMERA" --server "$SERVER" --user "$USER_CODE" --port "$CTRL" \
@@ -88,12 +115,12 @@ URL="$WEB/app/?$Q"
 [ "$BROWSER" = 1 ] && case "$(uname)" in
   Darwin)
     if [ -d "/Applications/Google Chrome.app" ]; then
-      open -na "Google Chrome" --args --new-window --app="$URL" --autoplay-policy=no-user-gesture-required
+      open -na "Google Chrome" --args --new-window --app="$URL" --autoplay-policy=no-user-gesture-required $CHROME_EXTRA
     else open "$URL"; fi;;
   Linux)
     (command -v chromium-browser || command -v chromium || command -v google-chrome || echo xdg-open) >/dev/null
     B="$(command -v chromium-browser || command -v chromium || command -v google-chrome || echo xdg-open)"
-    "$B" --app="$URL" >/dev/null 2>&1 & ;;
+    "$B" --app="$URL" $CHROME_EXTRA >/dev/null 2>&1 & ;;
   *) echo "用浏览器打开：$URL";;
 esac
 [ "$BROWSER" = 0 ] && echo "· 没开浏览器（--no-browser）。桌面界面：$URL"
@@ -104,10 +131,13 @@ cat <<EOF
    咫尺 · 电脑版   我是 $NAME   好友码 $USER_CODE
   ─────────────────────────────────────────────
    1. 把刚打开的窗口拖到【投影仪那块屏】上，按 ⌃⌘F（Mac）或 F11 全屏
-   2. 手机或另一台电脑打开标定页，拖四个角对准投影出来的棋盘：
+   2. 手机或另一台电脑打开标定页，点「显示标定图」，桌上会出现方框和四个靶心，
+      把预览里的四个角拖过去对准，再点「开始游戏」：
         http://$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}'):$CTRL/
+      （投影窗口里按 C 也能开关标定图）
    3. 键盘方向键 + 回车 + Esc 就是遥控器
-   4. 把好友码 $USER_CODE 告诉家人
+   4. 把好友码 $USER_CODE 告诉家人$( [ -z "${SERVER##ws://127.0.0.1*}" ] && echo "
+   5. 另一台电脑：scripts/pc.sh --name 名字 --server ws://$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}'):$PORT/ws" )
 
    Ctrl+C 结束
 EOF

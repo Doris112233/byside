@@ -22,7 +22,7 @@ import time
 import urllib.parse
 
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-FAST = {"frame", "ink", "ping", "pong", "cursor", "point", "icon"}       # 丢了就丢了，不排队重发
+FAST = {"frame", "ink", "ping", "pong", "cursor", "point", "icon", "calib"}       # 丢了就丢了，不排队重发
 
 
 class NetLink:

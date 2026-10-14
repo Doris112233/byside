@@ -97,7 +97,7 @@ const meta=new Map();       // code → {name, busy}
    慢通路  落子/悔棋/重开/全量状态 —— 分配序号、存进日志、断线能重放
    快通路  ROI 预览帧、笔迹点流、心跳 —— 转发即忘，丢了就丢了
    画画的笔迹必须走快通路：等不起稳定判定，也不该把每个点都塞进日志。 */
-const FAST=new Set(['frame','ink','ping','pong','cursor','point','icon']);   // icon：通话里飘的表情
+const FAST=new Set(['frame','ink','ping','pong','cursor','point','icon','calib']);   // icon：表情；calib：标定图开关
 const LOG_MAX=500;
 
 function room(name){

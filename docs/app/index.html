@@ -454,6 +454,7 @@ const S={
   game:null,
   N:15, board:new Int8Array(225), origin:new Array(225).fill(null), moves:[], turn:1, cur:[7,7],
   step:0, pointing:false, pcur:[.5,.5],
+  calib:false,          // 标定图：棋盘位置画方框 + 四角靶心，给朝下的摄像头对准用
 };
 function friendName(code){ const f=store.friends.find(x=>x.code===code); return (S.presence[code]&&S.presence[code].name)||(f&&f.name)||code; }
 function ensureFriend(code,name){
@@ -522,6 +523,7 @@ const Nav=(()=>{
     const dir=DIR[k], ok=OK.has(k), bk=BACK.has(k);
     if(!(dir||ok||bk)){
       if(/^[1-3]$/.test(k)&&S.session){ e.preventDefault(); Session.setGame(['gomoku','origami','chat'][+k-1],true); }
+      if(k==='c'||k==='C'){ e.preventDefault(); Calib.set(!S.calib); }   // 现场没识别端也能看标定图
       return;
     }
     e.preventDefault();
@@ -638,6 +640,7 @@ const Handlers={
       case 'hangup': if(S.session&&m.from===S.session.peer){ Session.end(false); toast(friendName(m.from)+' 先走了，下次再坐'); } break;
       case 'rtc': RTC.onSignal(m); break;
       case 'icon': if(S.session) Overlay.fx(m.k); break;        // 房间内广播，自己发的已在 Net 里滤掉
+      case 'calib': Calib.set(!!m.on); break;                     // 识别端的「显示标定图」
       case '_undelivered': Invite.undelivered(m); break;
       // —— 以下是会话房间里的 ——
       case 'game': if(S.session) Session.setGame(m.g,false); break;
@@ -1087,6 +1090,18 @@ const Gomoku=(()=>{
     for(let k=0;k<N;k++){ ctx.beginPath(); ctx.moveTo(pad,pad+k*c); ctx.lineTo(w-pad,pad+k*c); ctx.stroke(); ctx.beginPath(); ctx.moveTo(pad+k*c,pad); ctx.lineTo(pad+k*c,w-pad); ctx.stroke(); }
     ctx.fillStyle=table?'rgba(240,178,90,.8)':'rgba(60,40,20,.7)';
     for(const [i,j] of [[3,3],[11,3],[3,11],[11,11],[7,7]]){ ctx.beginPath(); ctx.arc(pad+i*c,pad+j*c,c*.11,0,7); ctx.fill(); }
+    if(S.calib){
+      /* 标定图：和 rdk/render.py 的 calib_pattern 同一个意思 —— 方框 + 四个角的靶心。
+         靶心正好落在四个角交叉点上，识别端的 quad 四角就该拖到这四个点。 */
+      ctx.strokeStyle='#F0B25A'; ctx.lineWidth=3; ctx.strokeRect(pad,pad,(N-1)*c,(N-1)*c);
+      for(const [i,j] of [[0,0],[N-1,0],[N-1,N-1],[0,N-1]]){
+        const x=pad+i*c, y=pad+j*c, r=c*1.1;
+        ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x-r*1.4,y); ctx.lineTo(x+r*1.4,y); ctx.moveTo(x,y-r*1.4); ctx.lineTo(x,y+r*1.4); ctx.stroke();
+        ctx.fillStyle='#F0B25A'; ctx.beginPath(); ctx.arc(x,y,c*.18,0,7); ctx.fill();
+      }
+      side(); return;
+    }
     const last=S.moves[S.moves.length-1], mine=ME.code+'#board';
     for(let k=0;k<N*N;k++){ const v=S.board[k]; if(!v) continue;
       const i=k%N, j=(k/N)|0, x=pad+i*c, y=pad+j*c, r=c*.43;
@@ -1112,6 +1127,7 @@ const Gomoku=(()=>{
     side();
   }
   function side(){
+    if(S.calib){ $('go-who').innerHTML='<b>标定中</b>把手机标定页上的四个角<br>拖到桌上这四个靶心'; return; }
     if(!S.session) return;
     const my=S.session.color, peer=friendName(S.session.peer), win=winner();
     const stone=c=>`<span class="stone ${c===1?'b':'w'}"></span>`;
@@ -1238,6 +1254,29 @@ const Overlay=(()=>{
   $('r-list').querySelectorAll('.gcard').forEach(b=>b.onclick=()=>{ send(b.dataset.k); Sheets.close('sh-react'); });
   $('d-react').onclick=()=>Sheets.open('sh-react');
   return {fx,send,clear,badge};
+})();
+
+/* ============================================================
+   标定。识别端（手机标定页「显示标定图」）发 {t:'calib',on} 过来，或者键盘按 C。
+   没在会话里时借会话页的版式把棋盘摆出来 —— 棋盘在屏幕上的位置和真下棋时一模一样，
+   标定才算数。关掉就回家。
+   ============================================================ */
+const Calib=(()=>{
+  function set(on){
+    on=!!on; if(on===S.calib) return; S.calib=on;
+    if(on){
+      if(!S.session){
+        show('s-session'); $('c-name').textContent='标定'; $('c-av').innerHTML=''; $('c-time').textContent='';
+        $('novid').textContent='标定中'; $('novid').style.display='';
+        for(const k of Object.keys(GAMES)) $('p-'+k).classList.toggle('on',k==='gomoku');
+      }
+      requestAnimationFrame(()=>Gomoku.draw()); Nav.focus($('cv')); toast('标定图已打开：按 C 或在标定页点「开始游戏」关闭',3600);
+    }else{
+      if(!S.session){ $('novid').textContent='等对方的画面…'; show('s-home'); renderHome(); soon(()=>Nav.first()); }
+      else { Gomoku.draw(); Session.focusGame(); }
+    }
+  }
+  return {set};
 })();
 
 /* ============================================================

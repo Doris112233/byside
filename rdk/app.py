@@ -99,6 +99,10 @@ class App:
             self.quad = [[float(p[0]), float(p[1])] for p in c["quad"]]
         if c.get("mode") in ("calib", "play"):
             self.mode = c["mode"]
+            # 无头模式下投影是浏览器画的：把「显示标定图 / 开始游戏」转过去，
+            # 让桌上出现方框和四角靶心，手机标定页才有东西可以对
+            if self.link:
+                self.link.send({"t": "calib", "on": self.mode == "calib"})
         if c.get("scene") in ("gomoku", "origami"):
             self.scene = c["scene"]
         if "margin" in c:
