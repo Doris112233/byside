@@ -58,6 +58,7 @@ class App:
         self.offset = [0.0, 0.0]
         # 自动标定：标定模式下网页把 4 个 ArUco 投在棋盘四角，认出来就是 quad，不用拖
         self.auto_calib = ProjectedMarkers is not None
+        self.detector = None          # None = classic；否则是 detect_onnx.OnnxStoneDetector
         self.markers = None
         self.calib_found = 0          # 这一帧看到几个标记
         self.calib_hits = 0           # 连续认齐 4 个的帧数
@@ -297,7 +298,12 @@ class App:
             cls = None
             t0 = time.perf_counter()
             if bp and (self.seat or not getattr(self, "user", None)):
-                cls, _, cell = bcv.classify_abs(gray, bp, self.n, seat=self.seat)
+                if self.detector is not None:
+                    # onnx 要彩色图，按和 gray 一样的比例缩
+                    small = f if f.shape[1] == gray.shape[1] else cv2.resize(f, (gray.shape[1], gray.shape[0]), interpolation=cv2.INTER_AREA)
+                    cls, _, cell = self.detector.classify(small, bp, self.n, seat=self.seat)
+                else:
+                    cls, _, cell = bcv.classify_abs(gray, bp, self.n, seat=self.seat)
                 self.cell = cell
             dt_ms = (time.perf_counter() - t0) * 1000
 
@@ -425,12 +431,20 @@ def main():
     ap.add_argument("--user", default="", help="主人的好友码。板子挂在主人名下，跟着主人进会话")
     ap.add_argument("--headless", action="store_true", help="不开 pygame —— 投影交给板子上的浏览器")
     ap.add_argument("--no-auto-calib", action="store_true", help="关掉 ArUco 自动标定，只手动拖四个角")
+    ap.add_argument("--detector", default="classic", choices=["classic", "onnx"], help="棋子识别：classic 中位数算法 | onnx YOLO 模型")
+    ap.add_argument("--model", default="", help="--detector onnx 时的 .onnx 路径")
     a = ap.parse_args()
 
     app = App(a.source, seat=None if a.seat == "both" else a.seat, proc_width=a.proc_width)
     app.want_lock_exposure = a.lock_exposure
     if a.no_auto_calib:
         app.auto_calib = False
+    if a.detector == "onnx":
+        if not a.model:
+            sys.exit("--detector onnx 需要 --model best.onnx")
+        from detect_onnx import OnnxStoneDetector
+        app.detector = OnnxStoneDetector(a.model)
+        print(f"[识别] 用 onnx 模型 {a.model}", flush=True)
     if a.server:
         user = a.user.upper().strip() or None
         app.connect(a.server, a.room, user=user)
