@@ -25,6 +25,11 @@ import byside_cv as bcv
 import web
 from netlink import NetLink
 from framesource import FrameSource
+try:
+    from calib_aruco import ProjectedMarkers      # 要 cv2.aruco（opencv-python ≥ 4.7 自带）
+except Exception as _e:                           # 没有就只剩手动拖四个角
+    ProjectedMarkers = None
+    print(f"[标定] 自动标定不可用：{_e}", flush=True)
 
 CFG_PATH = os.path.expanduser("~/.byside/config.json")
 N = 15
@@ -51,6 +56,11 @@ class App:
         # 画面不会正好落在灯正下方，所以这两个必须能在线调。
         self.margin = 0.11
         self.offset = [0.0, 0.0]
+        # 自动标定：标定模式下网页把 4 个 ArUco 投在棋盘四角，认出来就是 quad，不用拖
+        self.auto_calib = ProjectedMarkers is not None
+        self.markers = None
+        self.calib_found = 0          # 这一帧看到几个标记
+        self.calib_hits = 0           # 连续认齐 4 个的帧数
         self.load_cfg()
 
         # 摄像头延迟打开：VideoCapture 连不上 MJPEG 流时会阻塞很久，
@@ -98,7 +108,12 @@ class App:
         if "quad" in c and len(c["quad"]) == 4:
             self.quad = [[float(p[0]), float(p[1])] for p in c["quad"]]
         if c.get("mode") in ("calib", "play"):
+            if c["mode"] == "play" and self.mode == "calib" and self.calib_hits >= 5:
+                self.save_cfg()                   # 自动标定认齐了，开始游戏时顺手存下来
+                print("[标定] 自动标定结果已保存", flush=True)
             self.mode = c["mode"]
+            if self.mode == "calib":
+                self.calib_hits = 0
             # 无头模式下投影是浏览器画的：把「显示标定图 / 开始游戏」转过去，
             # 让桌上出现方框和四角靶心，手机标定页才有东西可以对
             if self.link:
@@ -263,6 +278,21 @@ class App:
                 gray = cv2.resize(gray, (self.proc_width, int(gray.shape[0] * k)),
                                   interpolation=cv2.INTER_AREA)
 
+            # 标定模式：找网页投出来的 4 个 ArUco。认齐了直接写 quad，标定页上四个角会跟着跳过去。
+            if self.mode == "calib" and self.auto_calib:
+                if self.markers is None:
+                    self.markers = ProjectedMarkers()
+                q = self.markers.quad(gray)
+                self.calib_found = len(self.markers.last)
+                if q:
+                    with self.lock:
+                        self.quad = q
+                    self.calib_hits += 1
+                    if self.calib_hits == 5:
+                        print(f"[标定] 认齐 4 个标记，quad = {[[round(x, 3) for x in p] for p in q]}", flush=True)
+                else:
+                    self.calib_hits = 0
+
             bp = self.bp(gray.shape)
             cls = None
             t0 = time.perf_counter()
@@ -329,6 +359,7 @@ class App:
             return {
                 "mode": self.mode, "scene": self.scene, "seat": self.seat,
                 "quad": self.quad, "fps": self.fps, "ms": self.ms,
+                "auto": self.auto_calib, "calib_found": self.calib_found, "calib_ok": self.calib_hits >= 5,
                 "cell": self.cell, "stones": self.tracker.count,
                 "occluded": bool(self.tracker.occluded),
                 "temp": read_temp(),
@@ -393,10 +424,13 @@ def main():
     ap.add_argument("--room", default="home", help="房间号，两端必须一致（旧模式；有 --user 时不用）")
     ap.add_argument("--user", default="", help="主人的好友码。板子挂在主人名下，跟着主人进会话")
     ap.add_argument("--headless", action="store_true", help="不开 pygame —— 投影交给板子上的浏览器")
+    ap.add_argument("--no-auto-calib", action="store_true", help="关掉 ArUco 自动标定，只手动拖四个角")
     a = ap.parse_args()
 
     app = App(a.source, seat=None if a.seat == "both" else a.seat, proc_width=a.proc_width)
     app.want_lock_exposure = a.lock_exposure
+    if a.no_auto_calib:
+        app.auto_calib = False
     if a.server:
         user = a.user.upper().strip() or None
         app.connect(a.server, a.room, user=user)

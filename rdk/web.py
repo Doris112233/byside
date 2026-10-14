@@ -47,7 +47,7 @@ button:active{opacity:.6}
 </style></head><body><div class=wrap>
 <h1>BySide 控制台</h1>
 
-<div class=card><div class=lbl>标定 · 把四个角拖到投影出来的靶心</div>
+<div class=card><div class=lbl>标定 · 点「显示标定图」，桌上四个标记会被自动认出；认不出就手动拖四个角</div>
 <div id=stage><img id=pv src="/preview.jpg"></div>
 <div class=row>
   <button onclick="mode('calib')" id=bc>显示标定图</button>
@@ -120,6 +120,7 @@ function tick(){
   document.getElementById('stat').innerHTML=
    '<div><span>相机</span><b class="'+(s.fps>5?'ok':'bad')+'">'+s.fps.toFixed(1)+' fps</b></div>'+
    '<div><span>识别耗时</span><b>'+s.ms.toFixed(0)+' ms</b></div>'+
+   '<div><span>自动标定</span><b class="'+(s.calib_ok?'ok':'')+'">'+(s.auto?(s.mode=='calib'?('看到 '+s.calib_found+'/4 个标记'+(s.calib_ok?' ✓':'')):'开'):'关')+'</b></div>'+
    '<div><span>桌上棋子</span><b>'+s.stones+'</b></div>'+
    '<div><span>遮挡</span><b class="'+(s.occluded?'bad':'ok')+'">'+(s.occluded?'有手':'无')+'</b></div>'+
    '<div><span>格距</span><b>'+s.cell.toFixed(1)+' px</b></div>'+

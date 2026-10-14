@@ -1076,6 +1076,14 @@ const AGORA_CFG={appId:'',token:'',channel:''};
    投成实心的话，摄像头会把对方的白子认成自己桌上的真白子、回传、对方再投……正反馈。
    黑子本来就投不出来（黑 = 不发光），所以两种颜色靠环的颜色区分：暖白 / 琥珀。
    ============================================================ */
+/* 标定用的 4 个 ArUco 图案（4x4，1 = 黑格），和 rdk/calib_aruco.py 逐字节一致。
+   id 顺序 = 左上、右上、右下、左下，和识别端 quad 的顺序一样。 */
+const ARUCO=[
+  [[0,1,1,0],[1,0,0,1],[1,1,0,0],[0,0,1,1]],
+  [[1,0,1,0],[0,1,1,1],[1,1,0,0],[0,1,0,1]],
+  [[1,1,0,1],[0,0,1,0],[1,0,1,1],[0,1,1,0]],
+  [[0,1,0,1],[1,1,1,0],[0,0,1,1],[1,0,0,1]],
+];
 const Gomoku=(()=>{
   const cv=$('cv'), ctx=cv.getContext('2d'), N=S.N;
   const TABLE=()=>document.body.classList.contains('table');
@@ -1091,15 +1099,22 @@ const Gomoku=(()=>{
     ctx.fillStyle=table?'rgba(240,178,90,.8)':'rgba(60,40,20,.7)';
     for(const [i,j] of [[3,3],[11,3],[3,11],[11,11],[7,7]]){ ctx.beginPath(); ctx.arc(pad+i*c,pad+j*c,c*.11,0,7); ctx.fill(); }
     if(S.calib){
-      /* 标定图：和 rdk/render.py 的 calib_pattern 同一个意思 —— 方框 + 四个角的靶心。
-         靶心正好落在四个角交叉点上，识别端的 quad 四角就该拖到这四个点。 */
+      /* 标定图：方框 + 四个 ArUco 标记。标记不压在角点上（棋盘外只有 0.86 格边距，
+         标记会被 canvas 裁掉、黑边不闭合就认不出），而是往里缩到格点 (1.5,1.5) 这四个位置；
+         识别端（rdk/calib_aruco.py，同一套图案、同一个 1.5 的内缩量）从 4 个中心做单应，
+         外推回真正的四个角，不用人拖。
+         投影仪上白 = 发光：标记外面垫一圈亮底，黑边 = 不发光 = 露出桌面，摄像头看到的
+         就是一张「印在亮纸上的标记」。 */
       ctx.strokeStyle='#F0B25A'; ctx.lineWidth=3; ctx.strokeRect(pad,pad,(N-1)*c,(N-1)*c);
-      for(const [i,j] of [[0,0],[N-1,0],[N-1,N-1],[0,N-1]]){
-        const x=pad+i*c, y=pad+j*c, r=c*1.1;
-        ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x-r*1.4,y); ctx.lineTo(x+r*1.4,y); ctx.moveTo(x,y-r*1.4); ctx.lineTo(x,y+r*1.4); ctx.stroke();
-        ctx.fillStyle='#F0B25A'; ctx.beginPath(); ctx.arc(x,y,c*.18,0,7); ctx.fill();
-      }
+      const IN=1.5;
+      [[IN,IN],[N-1-IN,IN],[N-1-IN,N-1-IN],[IN,N-1-IN]].forEach(([i,j],id)=>{
+        const x=pad+i*c, y=pad+j*c, k=c*2.0, u=k/6, b=c*1.25;
+        ctx.fillStyle='#fff'; ctx.fillRect(x-b,y-b,2*b,2*b);          // 亮底（静区）
+        ctx.fillStyle='#000'; ctx.fillRect(x-k/2,y-k/2,k,k);          // 黑边
+        ctx.fillStyle='#fff';
+        for(let yy=0;yy<4;yy++) for(let xx=0;xx<4;xx++)
+          if(!ARUCO[id][yy][xx]) ctx.fillRect(x-k/2+(xx+1)*u,y-k/2+(yy+1)*u,u+.5,u+.5);
+      });
       side(); return;
     }
     const last=S.moves[S.moves.length-1], mine=ME.code+'#board';
@@ -1127,7 +1142,7 @@ const Gomoku=(()=>{
     side();
   }
   function side(){
-    if(S.calib){ $('go-who').innerHTML='<b>标定中</b>把手机标定页上的四个角<br>拖到桌上这四个靶心'; return; }
+    if(S.calib){ $('go-who').innerHTML='<b>标定中</b>摄像头会自动认出桌上<br>四个标记；标定页能看到结果'; return; }
     if(!S.session) return;
     const my=S.session.color, peer=friendName(S.session.peer), win=winner();
     const stone=c=>`<span class="stone ${c===1?'b':'w'}"></span>`;
