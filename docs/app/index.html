@@ -213,7 +213,7 @@ body.table .remote .fx{filter:none}
 body.table .react{display:none}
 .self{position:absolute;right:1rem;top:.8rem;height:34%;aspect-ratio:4/3;border-radius:.6rem;overflow:hidden;background:#000;
   border:.06rem solid var(--surface-line);z-index:3}
-.self video,.self>div[id^="agora-video"]{width:100%!important;height:100%!important;object-fit:cover;transform:scaleX(-1)}
+.self video,.self>div[id^="agora-video"]{width:100%!important;height:100%!important;object-fit:cover}   /* 拍的是桌面，不镜像 */
 body.table .self{display:none}
 .mid{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:1rem;padding:.6rem 1rem}
 .gamepane{display:none;height:100%;align-items:center;justify-content:center;gap:1rem}
@@ -343,7 +343,7 @@ body.keys .session .dock{padding-bottom:1.6rem}
     <div class="react" id="react"></div>
     <div class="remote" id="remote">
       <video id="v-remote" autoplay playsinline></video>
-      <div class="novid" id="novid">等对方的画面…</div>
+      <div class="novid" id="novid">等对方的桌面…</div>
       <div class="tag"><span class="avatar" id="c-av"></span><b id="c-name">—</b><span class="t" id="c-time">00:00</span></div>
       <div class="overlay" id="ov"><div class="badge" id="badge"></div></div>
     </div>
@@ -638,7 +638,8 @@ const Handlers={
       case 'accept': Invite.accepted(m); break;
       case 'reject': Invite.rejected(m); break;
       case 'hangup': if(S.session&&m.from===S.session.peer){ Session.end(false); toast(friendName(m.from)+' 先走了，下次再坐'); } break;
-      case 'rtc': RTC.onSignal(m); break;
+      case 'rtc': if(m.fallback){ if(S.session&&m.from===S.session.peer) RTC.toNative(); } else RTC.ready.then(()=>RTC.onSignal(m)); break;
+      case 'accepting': Invite.accepting(m); break;
       case 'icon': if(S.session) Overlay.fx(m.k); break;        // 房间内广播，自己发的已在 Net 里滤掉
       case 'calib': Calib.set(!!m.on); break;                     // 识别端的「显示标定图」
       case '_undelivered': Invite.undelivered(m); break;
@@ -835,10 +836,18 @@ const Invite=(()=>{
   }
   async function accept(){
     if(!S.inv) return;
-    const {peer,game,room}=S.inv; Chime.stop();
+    const {peer,game,room}=S.inv; Chime.stop(); clearTimeout(timer);
+    Net.send({t:'accepting',to:peer});       // 对方别倒计时了，我在开摄像头（第一次要等浏览器弹权限）
+    $('i-sub').textContent='正在打开摄像头…';
     await RTC.prepare();                    // 先拿好摄像头麦克风，再告诉对方 —— 不然对方的 offer 会先到
+    if(!S.inv||S.inv.room!==room){ RTC.close(); return; }   // 等权限的工夫对方取消了
     Net.send({t:'accept',to:peer,room});
     clear(); Session.start(room,peer,game,2);
+  }
+  function accepting(m){
+    if(!S.inv||S.inv.dir!=='out'||m.from!==S.inv.peer) return;
+    clearTimeout(timer); $('i-sub').textContent=friendName(m.from)+' 点了好呀，正在打开摄像头…';
+    timer=setTimeout(()=>{ if(S.inv&&S.inv.dir==='out'){ Net.send({t:'cancel',to:m.from}); toast(friendName(m.from)+' 那边摄像头一直没开起来'); home(); } },120000);
   }
   function decline(){ if(S.inv) Net.send({t:'reject',to:S.inv.peer}); home(); }
   async function accepted(m){
@@ -855,7 +864,7 @@ const Invite=(()=>{
   function cancelled(m){ if(S.inv&&S.inv.dir==='in'&&m.from===S.inv.peer){ toast(friendName(m.from)+' 先不等了'); home(); } }
   function undelivered(m){ if(m.of==='invite'&&S.inv&&S.inv.dir==='out'&&S.inv.peer===m.to){ toast(friendName(m.to)+' 刚好不在了'); home(); } }
   function back(){ if(!S.inv) return; if(S.inv.dir==='in') decline(); else cancel(); }
-  return {send,incoming,accepted,rejected,cancelled,undelivered,back};
+  return {send,incoming,accepting,accepted,rejected,cancelled,undelivered,back};
 })();
 /* ============================================================
    会话。对方在桌子远端的窗口里，游戏在中间，菜单在手边。
@@ -911,14 +920,50 @@ const Session=(()=>{
      agora   声网 Web SDK。跨城对称 NAT、回声消除、自适应码率由它兜。
    有 App ID 就用声网，连不上自动退回原生 —— 演示现场哪条通走哪条。
    ============================================================ */
-const RTC=(()=>{ const d={impl:null,name:'native'}; for(const k of ['prepare','offer','onSignal','connected','close']) d[k]=(...a)=>d.impl[k](...a); return d; })();
+const RTC=(()=>{ const d={impl:null,name:'native',ready:Promise.resolve()}; for(const k of ['prepare','offer','onSignal','connected','close']) d[k]=(...a)=>d.impl[k](...a); return d; })();
+/* 声网连不上时退回原生 WebRTC。两边必须一起退：一边在声网频道里、另一边在等原生 offer，
+   谁也看不见谁。退的那边发 {t:'rtc',fallback:1}，收到的一边也走这里；
+   切换期间来的信令先排队（RTC.ready），不然 offer 会落到声网那个空实现上丢掉。 */
+RTC.toNative=function(){
+  if(RTC.name!=='agora') return RTC.ready;
+  const old=RTC.impl; RTC.impl=RTC_NATIVE; RTC.name='native'; Net.badge();
+  RTC.ready=(async()=>{
+    try{ await old.close(); }catch(e){}
+    await RTC_NATIVE.prepare();
+    if(S.session&&S.session.color===1) await RTC_NATIVE.offer(S.session.peer);
+  })();
+  return RTC.ready;
+};
 function remoteShown(){ $('novid').style.display='none'; }
 
-/* 通话用哪只摄像头。笔记本接了朝下看桌子的影石（识别端偏爱它）之后，
-   浏览器的「默认摄像头」很可能就变成了它 —— 对方看到的是一张桌子。
-   所以通话这边反着来：名字像桌面相机的一律跳过，拿朝着脸的那只。
-   ?cam=名字片段 可以指定（记住；?cam=off 清掉）。 */
+/* 通话传的是桌面，不是人像：现在每端只有一只摄像头，朝下拍桌子（影石）。
+   人像视频留作以后第二只摄像头的选项。所以名字像桌面相机的优先；?cam=名字片段 可指定（记住；?cam=off 清掉）。
+
+   更要紧的是：识别端（rdk/app.py）已经占着这只摄像头，同一只摄像头两个程序开不了。
+   识别端在跑时（中继说「桌子已连上」），画面从它的 MJPEG 流拿：
+   http://localhost:8080/stream.mjpg → <img> → canvas → captureStream → 当视频轨发出去。
+   识别端没跑才直接开摄像头。?desk=http://主机:8080 可改识别端地址（记住；?desk=off 清掉）。 */
 const TABLE_CAM=/insta\s*360|影石|\blink\b/i;
+const DESK_URL=(()=>{ const q=new URLSearchParams(location.search).get('desk');
+  if(q==='off'){ try{ localStorage.removeItem('byside.desk'); }catch(e){} }
+  else if(q){ try{ localStorage.setItem('byside.desk',q); }catch(e){} }
+  let v=''; try{ v=localStorage.getItem('byside.desk')||''; }catch(e){} return (v.trim()||'http://localhost:8080').replace(/\/$/,''); })();
+let deskStop=null;
+async function deskTrack(){
+  const p=S.presence[ME.code]; if(!p||!p.desk) return null;
+  const img=new Image(); img.crossOrigin='anonymous';
+  const ok=await new Promise(r=>{ const t=setTimeout(()=>r(false),3000);
+    img.onload=()=>{ clearTimeout(t); r(true); }; img.onerror=()=>{ clearTimeout(t); r(false); };
+    img.src=DESK_URL+'/stream.mjpg?t='+Date.now(); });
+  if(!ok){ console.warn('[rtc] 识别端画面拿不到（'+DESK_URL+'），改开摄像头'); return null; }
+  const c=document.createElement('canvas'); c.width=img.naturalWidth||640; c.height=img.naturalHeight||360;
+  const cx=c.getContext('2d');
+  const timer=setInterval(()=>{ try{ cx.drawImage(img,0,0,c.width,c.height); }catch(e){} },100);
+  const tr=c.captureStream(10).getVideoTracks()[0];
+  deskStop=()=>{ clearInterval(timer); img.src=''; try{ tr.stop(); }catch(e){} deskStop=null; };
+  console.log('[rtc] 桌面画面来自识别端 '+DESK_URL+' '+c.width+'x'+c.height);
+  return tr;
+}
 const CAM_PREF=(()=>{ const q=new URLSearchParams(location.search).get('cam');
   if(q==='off'){ try{ localStorage.removeItem('byside.cam'); }catch(e){} }
   else if(q){ try{ localStorage.setItem('byside.cam',q); }catch(e){} }
@@ -926,7 +971,7 @@ const CAM_PREF=(()=>{ const q=new URLSearchParams(location.search).get('cam');
 function pickCam(list){
   list=(list||[]).filter(d=>d&&d.deviceId); if(!list.length) return null;
   if(CAM_PREF){ const m=list.find(d=>(d.label||'').toLowerCase().includes(CAM_PREF.toLowerCase())); if(m) return m; }
-  return list.find(d=>!TABLE_CAM.test(d.label||''))||list[0];
+  return list.find(d=>TABLE_CAM.test(d.label||''))||list[0];
 }
 
 const RTC_NATIVE=(()=>{
@@ -935,9 +980,16 @@ const RTC_NATIVE=(()=>{
   async function prepare(){
     if(local) return true;
     const AUDIO={echoCancellation:true,noiseSuppression:true};
+    const dt=await deskTrack();
+    if(dt){
+      local=new MediaStream([dt]);
+      try{ (await navigator.mediaDevices.getUserMedia({audio:AUDIO})).getAudioTracks().forEach(t=>local.addTrack(t)); }
+      catch(e){ toast('没拿到麦克风，只传桌面画面',3200); }
+      $('v-me').srcObject=local; return true;
+    }
     try{
       local=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280}},audio:AUDIO});
-      /* 拿到权限之后设备才有名字。要是默认给的是桌面相机，换成朝脸那只 */
+      /* 拿到权限之后设备才有名字。默认给的不是桌面相机就换成它 */
       try{
         const cams=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
         const want=pickCam(cams), cur=local.getVideoTracks()[0];
@@ -976,6 +1028,7 @@ const RTC_NATIVE=(()=>{
   function close(){
     if(pc){ try{ pc.close(); }catch(e){} pc=null; }
     if(local){ local.getTracks().forEach(t=>t.stop()); local=null; }
+    if(deskStop) deskStop();
     $('v-remote').srcObject=null; $('v-me').srcObject=null;
   }
   return {prepare,offer,onSignal,connected(){},close};
@@ -985,15 +1038,21 @@ const RTC_AGORA=(cfg)=>{
   let client=null, mic=null, cam=null, joined=false;
   async function prepare(){
     if(mic||cam) return true;
-    try{
-      let cams=[]; try{ cams=await AgoraRTC.getCameras(); }catch(e){}
-      const want=pickCam(cams);
-      if(want) console.log('[rtc] 通话摄像头：'+want.label);
-      [mic,cam]=await Promise.all([AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}),
-                                  AgoraRTC.createCameraVideoTrack(want?{cameraId:want.deviceId}:{})]);
+    const dt=await deskTrack();
+    if(dt){
+      try{ cam=AgoraRTC.createCustomVideoTrack({mediaStreamTrack:dt}); }catch(e){ console.warn('[rtc] 自定义视频轨失败',e); }
+      try{ mic=await AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}); }catch(e){ toast('没拿到麦克风，只传桌面画面',3200); }
+    }else{
+      try{
+        let cams=[]; try{ cams=await AgoraRTC.getCameras(); }catch(e){}
+        const want=pickCam(cams);
+        if(want) console.log('[rtc] 通话摄像头：'+want.label);
+        [mic,cam]=await Promise.all([AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}),
+                                    AgoraRTC.createCameraVideoTrack(want?{cameraId:want.deviceId}:{})]);
+      }
+      catch(e){ try{ mic=await AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}); }catch(_){} if(!mic&&!cam) toast('没拿到摄像头/麦克风，先不带画面一起坐会儿',3600); }
     }
-    catch(e){ try{ mic=await AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}); }catch(_){} if(!mic&&!cam) toast('没拿到摄像头/麦克风，先不带画面一起坐会儿',3600); }
-    if(cam){ $('v-me').style.display='none'; cam.play($('self'),{mirror:true,fit:'cover'}); }
+    if(cam){ $('v-me').style.display='none'; cam.play($('self'),{mirror:false,fit:'cover'}); }
     return true;
   }
   async function connected(){
@@ -1028,17 +1087,16 @@ const RTC_AGORA=(cfg)=>{
       const msg=String(e.message||e), code=e&&e.code?String(e.code):'';
       toast(msg.includes('dynamic use static key')?'声网项目开了安全模式，需要 token。先用原生画面。':'声网连不上（'+(code||msg.slice(0,40))+'），先用原生画面',5000);
       console.error('[rtc] join 失败 code='+code+' msg='+msg,e);
-      await close();
-      RTC.impl=RTC_NATIVE; RTC.name='native'; Net.badge();
-      await RTC_NATIVE.prepare();
-      if(S.session&&S.session.color===1) RTC_NATIVE.offer(S.session.peer);
+      if(!S.session) return;                       // 通话已经结束了，join 被 leave 打断不算失败
+      Net.send({t:'rtc',to:S.session.peer,fallback:1});   // 告诉对方：我退原生了，你也退
+      RTC.toNative();
     }
   }
   async function close(){
     try{ if(client&&joined) await client.leave(); }catch(e){}
     joined=false; client=null;
     for(const t of [mic,cam]) if(t){ try{ t.stop(); t.close(); }catch(e){} }
-    mic=cam=null;
+    mic=cam=null; if(deskStop) deskStop();
     document.querySelectorAll('#remote>div[id^="agora-video"],#self>div[id^="agora-video"]').forEach(el=>el.remove());
     $('v-remote').style.display=''; $('v-me').style.display='';
   }
@@ -1287,7 +1345,7 @@ const Calib=(()=>{
       }
       requestAnimationFrame(()=>Gomoku.draw()); Nav.focus($('cv')); toast('标定图已打开：按 C 或在标定页点「开始游戏」关闭',3600);
     }else{
-      if(!S.session){ $('novid').textContent='等对方的画面…'; show('s-home'); renderHome(); soon(()=>Nav.first()); }
+      if(!S.session){ $('novid').textContent='等对方的桌面…'; show('s-home'); renderHome(); soon(()=>Nav.first()); }
       else { Gomoku.draw(); Session.focusGame(); }
     }
   }
