@@ -108,7 +108,7 @@ Chromium/Firefox 是 snap 包，能不能跑、带不带得动视频通话要开
 买好之后，控制台里先做两件事：域名 A 记录指到服务器 IP；防火墙放行 80 和 443。然后：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Doris112233/byside/claude/charming-wilbur-abc0c7/scripts/server-setup.sh -o setup.sh
+curl -fsSL https://raw.githubusercontent.com/Doris112233/byside/main/scripts/server-setup.sh -o setup.sh
 sudo bash setup.sh --domain byside.你的域名.com
 ```
 
@@ -127,8 +127,12 @@ EOF
 chmod 600 agora.env        # 已在 .gitignore 里，不会进仓库
 ```
 
-网页进了会话会问中继要 token，中继只给确实在这个会话里的人签。
-没配证书时一切照常，音视频退回浏览器原生 WebRTC。
+网页进了会话会问中继要 token，中继只给确实在这个会话里的人签
+（签法已和声网官方 `agora-token` 包逐字节比对过）。右下角那枚小标会写明当前走的是「声网」还是「原生」。
+没配证书时作为备用退回浏览器原生 WebRTC —— 只有 STUN 没有 TURN，跨城对称 NAT 下大概率连不上，正式用一律声网。
+
+通话摄像头默认避开名字像桌面相机（Insta360 / 影石 / Link）的那只，留给识别端；
+要指定就打开一次 `?cam=名字片段`（会记住）。
 
 ## 现场流程
 
@@ -153,6 +157,7 @@ chmod 600 agora.env        # 已在 .gitignore 里，不会进仓库
 | 梯形校正 | 四角可调的单应变换，同时作用于视频（CSS matrix3d）和棋盘（绘制坐标），两者严格对齐 |
 | 同步 | WebSocket 中继跨机器，同源时回退 BroadcastChannel |
 | 投影输出 | 独立窗口被动渲染，控制窗常驻广播状态 |
+| 通话叠加 | 对方画面左下角一枚「在玩什么 / 该谁了」小标（两边各自从本地状态推）；互动表情走中继快通路，不进日志不重放 |
 
 仓库里还保留着一套自写的 ArUco 检测器（自适应二值化 → 连通域 → 凸包 → 内接最大四边形 → 局部 Otsu 解码），
 早期用标记定位棋盘时写的，现在默认不启用，可在面板切回。
@@ -160,9 +165,12 @@ chmod 600 agora.env        # 已在 .gitignore 里，不会进仓库
 ## 文件
 
 ```
-index.html        单文件前端，约 2600 行（JS / HTML / CSS 全部内联）
-server.js         静态服务 + WebSocket 中继（含手写 RFC6455 帧解析）
-docs/index.html   产品介绍页，发布在 GitHub Pages
+docs/app/index.html   桌面端网页：起名 → 找好友 → 呼叫 → 通话里下棋 / 折纸（投影模式 ?surface=table）
+server.js             静态服务 + WebSocket 中继（房间、序号、断线补发、在线状态、声网 token 签发）
+rdk/                  识别端（Python / OpenCV）：摄像头 → 棋子坐标 → 中继。电脑和 RDK 板子跑同一份
+scripts/              pc.sh 电脑版一键启动 · rdk-setup.sh 板子版 · server-setup.sh 云服务器
+index.html            旧版单页：浏览器里识别 + 投影的实体五子棋，仍可独立运行
+docs/index.html       产品介绍页，发布在 GitHub Pages
 ```
 
 ## 团队

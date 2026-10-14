@@ -11,11 +11,11 @@
 #  Caddy 申请证书要走 80/443，这两件没做证书就申请不下来。
 #
 #  用法（登录服务器后）：
-#    curl -fsSL https://raw.githubusercontent.com/Doris112233/byside/claude/charming-wilbur-abc0c7/scripts/server-setup.sh -o setup.sh
+#    curl -fsSL https://raw.githubusercontent.com/Doris112233/byside/main/scripts/server-setup.sh -o setup.sh
 #    sudo bash setup.sh --domain byside.你的域名.com
 # ============================================================
 set -euo pipefail
-DOMAIN=""; BRANCH="claude/charming-wilbur-abc0c7"; DIR="/opt/byside"
+DOMAIN=""; BRANCH="main"; DIR="/opt/byside"
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) DOMAIN="$2"; shift 2;;

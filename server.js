@@ -97,7 +97,7 @@ const meta=new Map();       // code → {name, busy}
    慢通路  落子/悔棋/重开/全量状态 —— 分配序号、存进日志、断线能重放
    快通路  ROI 预览帧、笔迹点流、心跳 —— 转发即忘，丢了就丢了
    画画的笔迹必须走快通路：等不起稳定判定，也不该把每个点都塞进日志。 */
-const FAST=new Set(['frame','ink','ping','pong','cursor','point']);
+const FAST=new Set(['frame','ink','ping','pong','cursor','point','icon']);   // icon：通话里飘的表情
 const LOG_MAX=500;
 
 function room(name){
@@ -325,7 +325,7 @@ function close(c){
 setInterval(()=>{
   let n=0; for(const r of rooms.values()) n+=r.clients.size;
   log('在线 '+users.size+' 人 · '+n+' 个连接 · '+rooms.size+' 个房间');
-},60000);
+},60000).unref();   // unref：被 require 时定时器不把进程吊着
 
 setInterval(()=>{
   const now=Date.now();
@@ -339,7 +339,7 @@ setInterval(()=>{
       rooms.delete(name); log('房间「'+name+'」空置十分钟，回收');
     }
   }
-},5000);
+},5000).unref();
 
 /* ---------------- 启动 ---------------- */
 function log(m){ console.log('['+new Date().toTimeString().slice(0,8)+'] '+m); }
@@ -350,6 +350,8 @@ function lanIPs(){
   return out;
 }
 
+/* 只有直接运行时才监听。被 require（比如 token 自检脚本）时只导出函数，不占端口。 */
+if(require.main===module){
 const httpSrv=http.createServer(serve);
 httpSrv.on('upgrade',onUpgrade);
 /* 放在 Caddy 后面时设 BIND=127.0.0.1：外面只能经 Caddy 的 HTTPS 进来，中继自己的明文端口不对外 */
@@ -357,8 +359,6 @@ httpSrv.listen(HTTP_PORT,process.env.BIND||'0.0.0.0',()=>{
   log('HTTP  监听 '+HTTP_PORT);
   log(AGORA.appId&&AGORA.cert?'声网 token 签发已启用（App ID '+AGORA.appId.slice(0,6)+'…）':'未配置声网证书 —— 网页将退回原生 WebRTC');
 });
-module.exports={rtcToken};
-
 let key,cert;
 try{ key=fs.readFileSync(path.join(ROOT,'key.pem')); cert=fs.readFileSync(path.join(ROOT,'cert.pem')); }catch(e){}
 if(key&&cert){
@@ -371,3 +371,5 @@ if(key&&cert){
 }else{
   log('未找到 key.pem / cert.pem，只启了 HTTP —— 局域网上的另一台机器将无法使用摄像头');
 }
+}
+module.exports={rtcToken};

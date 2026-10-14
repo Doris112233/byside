@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "aruco-gomoku",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8777"],
-      "port": 8777
+      "name": "byside-relay",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 8778
     }
   ]
 }

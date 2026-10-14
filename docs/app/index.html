@@ -194,6 +194,23 @@ body.table .sheet{background:#000;border-color:rgba(224,151,90,.35)}
 .remote .tag .avatar{width:1.3rem;height:1.3rem}
 .remote .tag .t{font-family:var(--font-mono);color:var(--ink-dim);font-size:.62rem}
 .remote .novid{position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-dim);font-size:.7rem;z-index:1}
+/* 叠在对方画面上的东西：左下角一枚「在玩什么」的小标，和飘上去的表情。
+   不接指针事件 —— 它们只是看的。自己的小窗在右上角，所以小标放左下，手机上也不会被盖住。 */
+.remote .overlay{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.remote .badge{position:absolute;left:.6rem;bottom:.5rem;display:flex;align-items:center;gap:.35rem;font-size:.66rem;color:var(--ink);
+  background:rgba(0,0,0,.6);border:.06rem solid rgba(224,151,90,.4);padding:.2rem .6rem .2rem .35rem;border-radius:999px}
+.remote .badge:empty{display:none}
+.remote .badge svg{width:1.1rem;height:1.1rem}
+.remote .badge.hot{border-color:var(--lamp);color:var(--lamp)}
+.remote .fx{position:absolute;bottom:0;width:2.6rem;height:2.6rem;margin-left:-1.3rem;animation:fx 1.8s ease-out forwards;filter:drop-shadow(0 0 .5rem rgba(240,178,90,.5))}
+body.table .remote .fx{filter:none}
+@keyframes fx{0%{transform:translateY(0) scale(.5);opacity:0}12%{opacity:1;transform:translateY(-12%) scale(1.1)}100%{transform:translateY(-330%) scale(1);opacity:0}}
+/* 表情：手持端在视频旁边一列直接点；投影端没触屏，走 dock 里的「表情」按钮开抽屉 */
+.react{display:flex;flex-direction:column;justify-content:center;gap:.45rem;height:100%}
+.react button{width:2.4rem;height:2.4rem;border-radius:50%;background:var(--surface);border:.06rem solid var(--surface-line);display:grid;place-items:center;transition:transform .12s}
+.react button:active{transform:scale(1.15)}
+.react button svg{width:1.5rem;height:1.5rem}
+body.table .react{display:none}
 .self{position:absolute;right:1rem;top:.8rem;height:34%;aspect-ratio:4/3;border-radius:.6rem;overflow:hidden;background:#000;
   border:.06rem solid var(--surface-line);z-index:3}
 .self video,.self>div[id^="agora-video"]{width:100%!important;height:100%!important;object-fit:cover;transform:scaleX(-1)}
@@ -232,7 +249,7 @@ body.table .paper{background:transparent}
 .dock button.on .ico{background:var(--amber-soft);border-color:var(--amber)}
 .dock button.end .ico{background:rgba(224,112,90,.18);border-color:var(--warn)}
 .dock button.end .ico svg .hand{stroke:var(--warn)}
-@media (max-aspect-ratio:1/1){ .far{height:26vh} .remote{height:100%;aspect-ratio:auto;width:100%} .mid{flex-direction:column} .side{flex-direction:row;flex-wrap:wrap;justify-content:center;min-width:0} #cv{height:auto;width:100%} .paper{height:auto;width:100%} }
+@media (max-aspect-ratio:1/1){ .far{height:26vh} .remote{height:100%;aspect-ratio:auto;width:100%} .react{display:none} .mid{flex-direction:column} .side{flex-direction:row;flex-wrap:wrap;justify-content:center;min-width:0} #cv{height:auto;width:100%} .paper{height:auto;width:100%} }
 
 /* ---------- 提示条 / 状态 ---------- */
 .keyhint{position:fixed;left:50%;bottom:max(.5rem,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;
@@ -277,6 +294,12 @@ body.keys .session .dock{padding-bottom:1.6rem}
   <g id="ic-back"><g class="hand" stroke-width="2.6"><path d="M 30,12 L 18,24 L 30,36"/></g></g>
   <g id="ic-next"><g class="hand" stroke-width="2.6"><path d="M 18,12 L 30,24 L 18,36"/></g></g>
   <g id="ic-bye"><g class="hand" stroke-width="2.4"><path d="M 14,14 L 34,34 M 34,14 L 14,34"/></g></g>
+  <!-- 表情：飘在对方画面上的那几个 -->
+  <g id="ic-smile"><g class="hand" stroke-width="2.4"><circle cx="24" cy="24" r="15"/><path d="M 17,20 l 0,2 M 31,20 l 0,2" stroke-width="2.6"/><path d="M 16,28 Q 24,36 32,28" stroke-width="2.2"/></g></g>
+  <g id="rx-heart"><path d="M 24,41 C 8,30 5,16 14,12 c 5,-2 9,2 10,5 c 1,-3 5,-7 10,-5 c 9,4 6,18 -10,29 z" fill="var(--amber)"/></g>
+  <g id="rx-thumb"><g class="hand" stroke-width="2.4"><path d="M 14,22 H 8 V 40 H 14 Z"/><path d="M 14,24 L 22,10 Q 27,8 26,14 L 24,22 H 38 Q 42,22 41,27 L 38,38 Q 37,40 34,40 H 14"/></g></g>
+  <g id="rx-laugh"><g class="hand" stroke-width="2.4"><circle cx="24" cy="24" r="16"/><path d="M 15,19 l 5,0 M 28,19 l 5,0" stroke-width="2"/><path d="M 14,27 Q 24,41 34,27 Z" fill="var(--amber)" stroke="none"/></g></g>
+  <g id="rx-party"><g class="hand" stroke-width="2.4"><path d="M 10,40 L 19,16 L 32,29 Z"/><path d="M 19,16 L 23,8 M 32,29 L 40,27 M 27,22 L 35,14" stroke-width="2"/><circle cx="39" cy="10" r="2" fill="var(--amber)" stroke="none"/><circle cx="12" cy="14" r="2" fill="var(--amber)" stroke="none"/><circle cx="42" cy="20" r="1.6" fill="var(--amber)" stroke="none"/></g></g>
 </defs></svg>
 
 <!-- ================= 起名 ================= -->
@@ -317,10 +340,12 @@ body.keys .session .dock{padding-bottom:1.6rem}
 <!-- ================= 会话 ================= -->
 <section class="screen session" id="s-session">
   <div class="far">
+    <div class="react" id="react"></div>
     <div class="remote" id="remote">
       <video id="v-remote" autoplay playsinline></video>
       <div class="novid" id="novid">等对方的画面…</div>
       <div class="tag"><span class="avatar" id="c-av"></span><b id="c-name">—</b><span class="t" id="c-time">00:00</span></div>
+      <div class="overlay" id="ov"><div class="badge" id="badge"></div></div>
     </div>
     <div class="self" id="self"><video id="v-me" autoplay playsinline muted></video></div>
   </div>
@@ -352,6 +377,7 @@ body.keys .session .dock{padding-bottom:1.6rem}
     <button data-nav data-game="gomoku"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-go"/></svg></span>下棋</button>
     <button data-nav data-game="origami"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-paper"/></svg></span>折纸</button>
     <button data-nav data-game="chat"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-tea"/></svg></span>聊聊天</button>
+    <button data-nav id="d-react"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-smile"/></svg></span>表情</button>
     <button data-nav class="end" id="d-end"><span class="ico"><svg viewBox="0 0 48 48"><use href="#ic-bye"/></svg></span>结束</button>
   </div>
 </section>
@@ -360,6 +386,12 @@ body.keys .session .dock{padding-bottom:1.6rem}
 <div class="veil" id="sh-game"><div class="sheet">
   <h3><span class="avatar" id="g-av"></span><span id="g-title">和 — 一起…</span></h3>
   <div class="games" id="g-list"></div>
+</div></div>
+
+<!-- ================= 抽屉：表情（投影端用遥控器选） ================= -->
+<div class="veil" id="sh-react"><div class="sheet">
+  <h3>给 TA 一个表情</h3>
+  <div class="games" id="r-list"></div>
 </div></div>
 
 <!-- ================= 抽屉：加好友 ================= -->
@@ -522,6 +554,7 @@ const Nav=(()=>{
     let h='';
     if(sheet&&sheet.id==='sh-game') h=K('◀▶','选游戏')+K('确定','发出邀请')+K('返回','算了');
     else if(sheet&&sheet.id==='sh-add') h=K('方向键','选字')+K('确定','输入')+K('返回','关闭');
+    else if(sheet&&sheet.id==='sh-react') h=K('◀▶','选表情')+K('确定','发过去')+K('返回','算了');
     else if(scr==='s-setup') h=K('确定','开始');
     else if(scr==='s-home') h=K('方向键','选人')+K('确定','找 TA 玩');
     else if(scr==='s-invite') h=S.inv&&S.inv.dir==='in'?K('确定','好呀')+K('返回','下次吧'):K('返回','不等了');
@@ -585,8 +618,10 @@ const Net=(()=>{
     const a={t:m.t,channel:m.channel,ok,timer:setTimeout(()=>{ const i=asks.indexOf(a); if(i>=0) asks.splice(i,1); ok(null); },ms)};
     asks.push(a); if(!send(m)){ clearTimeout(a.timer); asks.splice(asks.indexOf(a),1); ok(null); }
   }); }
-  function setNet(ok){ const n=$('net'); n.classList.toggle('ok',ok); n.querySelector('span').textContent=ok?'已连上':'连接中'; }
-  return {connect,send,join,ask};
+  let netOk=false;
+  function setNet(ok){ netOk=ok; const n=$('net'); n.classList.toggle('ok',ok);
+    n.querySelector('span').textContent=(ok?'已连上':'连接中')+' · '+(RTC.name==='agora'?'声网':'原生'); }
+  return {connect,send,join,ask,badge:()=>setNet(netOk)};
 })();
 /* ============================================================
    收消息
@@ -602,6 +637,7 @@ const Handlers={
       case 'reject': Invite.rejected(m); break;
       case 'hangup': if(S.session&&m.from===S.session.peer){ Session.end(false); toast(friendName(m.from)+' 先走了，下次再坐'); } break;
       case 'rtc': RTC.onSignal(m); break;
+      case 'icon': if(S.session) Overlay.fx(m.k); break;        // 房间内广播，自己发的已在 Net 里滤掉
       case '_undelivered': Invite.undelivered(m); break;
       // —— 以下是会话房间里的 ——
       case 'game': if(S.session) Session.setGame(m.g,false); break;
@@ -656,11 +692,11 @@ function renderHome(){
   for(const f of list){
     const p=S.presence[f.code]||{}, on=!!p.online, busy=!!p.busy;
     const st=on?(busy?'正在陪别人':'在桌边'):'不在';
-    h+=`<button class="fcard${on?' on':''}${busy?' busy':''}" data-nav data-code="${esc(f.code)}">
+    h+=`<button class="fcard${on?' on':''}${busy?' busy':''}" data-nav data-code="${esc(f.code)}" aria-label="${esc(friendName(f.code))}，${st}">
       <span class="avatar">${avatarSVG(f.code)}</span><span class="nm">${esc(friendName(f.code))}</span>
       <span class="st"><i></i>${st}</span></button>`;
   }
-  h+=`<button class="fcard add" data-nav data-code="+"><span class="plus">+</span><span class="nm" style="font-size:.9rem;font-weight:500">加好友</span></button>`;
+  h+=`<button class="fcard add" data-nav data-code="+" aria-label="加好友"><span class="plus">+</span><span class="nm" style="font-size:.9rem;font-weight:500">加好友</span></button>`;
   box.innerHTML=h;
   box.querySelectorAll('.fcard').forEach(el=>el.onclick=()=>{
     const code=el.dataset.code;
@@ -703,7 +739,7 @@ const GamePick={
     this.code=code;
     $('g-av').innerHTML=avatarSVG(code); $('g-title').textContent='和 '+friendName(code)+' 一起…';
     $('g-list').innerHTML=Object.entries(GAMES).map(([k,g])=>
-      `<button class="gcard" data-nav data-g="${k}"><svg viewBox="0 0 48 48"><use href="${g.icon}"/></svg><b>${g.name}</b><span>${g.desc}</span></button>`).join('');
+      `<button class="gcard" data-nav data-g="${k}" aria-label="${g.verb}"><svg viewBox="0 0 48 48"><use href="${g.icon}"/></svg><b>${g.name}</b><span>${g.desc}</span></button>`).join('');
     $('g-list').querySelectorAll('.gcard').forEach(el=>el.onclick=()=>{ Sheets.closeAll(); Invite.send(this.code,el.dataset.g); });
     Sheets.open('sh-game');
   }
@@ -848,6 +884,7 @@ const Session=(()=>{
     $('dock').querySelectorAll('[data-game]').forEach(b=>b.classList.toggle('on',b.dataset.game===g));
     if(g==='gomoku') requestAnimationFrame(()=>Gomoku.draw());
     if(g==='origami') Origami.render();
+    Overlay.badge();
     if(broadcast) Net.send({t:'game',g});
     soon(()=>focusGame());
   }
@@ -857,7 +894,7 @@ const Session=(()=>{
     if(!S.session) return;
     if(notify) Net.send({t:'hangup',to:S.session.peer});
     RTC.close(); Net.send({t:'busy',on:false}); Net.join('u:'+ME.code);
-    S.session=null; S.game=null; clearTimeout(tickT);
+    S.session=null; S.game=null; clearTimeout(tickT); Overlay.badge(); Overlay.clear();
     show('s-home'); renderHome(); soon(()=>Nav.first());
   }
   $('dock').querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>setGame(b.dataset.game,true));
@@ -874,13 +911,40 @@ const Session=(()=>{
 const RTC=(()=>{ const d={impl:null,name:'native'}; for(const k of ['prepare','offer','onSignal','connected','close']) d[k]=(...a)=>d.impl[k](...a); return d; })();
 function remoteShown(){ $('novid').style.display='none'; }
 
+/* 通话用哪只摄像头。笔记本接了朝下看桌子的影石（识别端偏爱它）之后，
+   浏览器的「默认摄像头」很可能就变成了它 —— 对方看到的是一张桌子。
+   所以通话这边反着来：名字像桌面相机的一律跳过，拿朝着脸的那只。
+   ?cam=名字片段 可以指定（记住；?cam=off 清掉）。 */
+const TABLE_CAM=/insta\s*360|影石|\blink\b/i;
+const CAM_PREF=(()=>{ const q=new URLSearchParams(location.search).get('cam');
+  if(q==='off'){ try{ localStorage.removeItem('byside.cam'); }catch(e){} }
+  else if(q){ try{ localStorage.setItem('byside.cam',q); }catch(e){} }
+  let v=''; try{ v=localStorage.getItem('byside.cam')||''; }catch(e){} return v.trim(); })();
+function pickCam(list){
+  list=(list||[]).filter(d=>d&&d.deviceId); if(!list.length) return null;
+  if(CAM_PREF){ const m=list.find(d=>(d.label||'').toLowerCase().includes(CAM_PREF.toLowerCase())); if(m) return m; }
+  return list.find(d=>!TABLE_CAM.test(d.label||''))||list[0];
+}
+
 const RTC_NATIVE=(()=>{
   let pc=null, local=null;
   const ICE=[{urls:'stun:stun.miwifi.com:3478'},{urls:'stun:stun.qq.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
   async function prepare(){
     if(local) return true;
     const AUDIO={echoCancellation:true,noiseSuppression:true};
-    try{ local=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280}},audio:AUDIO}); }
+    try{
+      local=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280}},audio:AUDIO});
+      /* 拿到权限之后设备才有名字。要是默认给的是桌面相机，换成朝脸那只 */
+      try{
+        const cams=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+        const want=pickCam(cams), cur=local.getVideoTracks()[0];
+        if(want&&cur&&cur.getSettings().deviceId!==want.deviceId){
+          const v=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:want.deviceId},width:{ideal:1280}}});
+          cur.stop(); local.removeTrack(cur); local.addTrack(v.getVideoTracks()[0]);
+          console.log('[rtc] 通话摄像头换成：'+want.label);
+        }
+      }catch(e){}
+    }
     catch(e){
       /* 板子上常见：唯一的摄像头被桌面识别占着，要不到视频。
          原来这里视频音频一起失败 —— 连话都说不了。现在退一步只要麦克风。 */
@@ -918,7 +982,13 @@ const RTC_AGORA=(cfg)=>{
   let client=null, mic=null, cam=null, joined=false;
   async function prepare(){
     if(mic||cam) return true;
-    try{ [mic,cam]=await Promise.all([AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}),AgoraRTC.createCameraVideoTrack()]); }
+    try{
+      let cams=[]; try{ cams=await AgoraRTC.getCameras(); }catch(e){}
+      const want=pickCam(cams);
+      if(want) console.log('[rtc] 通话摄像头：'+want.label);
+      [mic,cam]=await Promise.all([AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}),
+                                  AgoraRTC.createCameraVideoTrack(want?{cameraId:want.deviceId}:{})]);
+    }
     catch(e){ try{ mic=await AgoraRTC.createMicrophoneAudioTrack({AEC:true,ANS:true}); }catch(_){} if(!mic&&!cam) toast('没拿到摄像头/麦克风，先不带画面一起坐会儿',3600); }
     if(cam){ $('v-me').style.display='none'; cam.play($('self'),{mirror:true,fit:'cover'}); }
     return true;
@@ -950,12 +1020,13 @@ const RTC_AGORA=(cfg)=>{
     try{
       await client.join(cfg.appId,channel,token,null); joined=true;
       const tracks=[mic,cam].filter(Boolean); if(tracks.length) await client.publish(tracks);
+      console.log('[rtc] 声网已接通 频道 '+channel+(token?'（带 token）':'（无 token）')); Net.badge();
     }catch(e){
-      const msg=String(e.message||e);
-      toast(msg.includes('dynamic use static key')?'声网项目开了安全模式，需要 token。先用原生画面。':'声网连不上，先用原生画面',5000);
-      console.error('[rtc] join 失败',e);
+      const msg=String(e.message||e), code=e&&e.code?String(e.code):'';
+      toast(msg.includes('dynamic use static key')?'声网项目开了安全模式，需要 token。先用原生画面。':'声网连不上（'+(code||msg.slice(0,40))+'），先用原生画面',5000);
+      console.error('[rtc] join 失败 code='+code+' msg='+msg,e);
       await close();
-      RTC.impl=RTC_NATIVE; RTC.name='native';
+      RTC.impl=RTC_NATIVE; RTC.name='native'; Net.badge();
       await RTC_NATIVE.prepare();
       if(S.session&&S.session.color===1) RTC_NATIVE.offer(S.session.peer);
     }
@@ -989,8 +1060,8 @@ const AGORA_CFG={appId:'',token:'',channel:''};
   if(!AGORA_CFG.appId) return;
   const sc=document.createElement('script');
   sc.src='https://download.agora.io/sdk/release/AgoraRTC_N-4.24.8.js';
-  sc.onload=()=>{ RTC.impl=RTC_AGORA(AGORA_CFG); RTC.name='agora'; console.log('[rtc] 声网已就绪'); };
-  sc.onerror=()=>console.warn('[rtc] 声网 SDK 加载失败，用原生');
+  sc.onload=()=>{ RTC.impl=RTC_AGORA(AGORA_CFG); RTC.name='agora'; console.log('[rtc] 声网已就绪'); Net.badge(); };
+  sc.onerror=()=>{ console.warn('[rtc] 声网 SDK 加载失败，用原生'); toast('声网 SDK 没加载出来，先用原生画面',4000); Net.badge(); };
   document.head.appendChild(sc);
 })();
 
@@ -1048,6 +1119,7 @@ const Gomoku=(()=>{
     if(win) st=`<b>${stone(win)}${win===my?'你赢了 🎉':peer+' 赢了'}</b>按「重来」再下一盘`;
     else st=S.turn===my?`<b>${stone(my)}该你了</b>摆真棋子，或者用遥控器`:`<b>${stone(S.turn)}等 ${esc(peer)}</b>TA 的子会亮在你桌上`;
     $('go-who').innerHTML=`<div style="margin-bottom:.4rem">我执 ${stone(my)} ${my===1?'黑':'白'}</div>`+st;
+    Overlay.badge();
   }
   function winner(){ const b=S.board; for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const v=b[j*N+i]; if(!v) continue;
     for(const [di,dj] of [[1,0],[0,1],[1,1],[1,-1]]){ let k=1; while(k<5){ const x=i+di*k,y=j+dj*k; if(x<0||y<0||x>=N||y>=N||b[y*N+x]!==v) break; k++; } if(k===5) return v; } } return 0; }
@@ -1081,7 +1153,7 @@ const Gomoku=(()=>{
   $('go-undo').onclick=()=>{ if(!S.moves.length) return; Net.send({t:'undo'}); undoLocal(); };
   $('go-reset').onclick=()=>{ Net.send({t:'reset'}); resetLocal(); };
   addEventListener('resize',()=>{ if(S.game==='gomoku') draw(); });
-  return {draw,apply,undoLocal,resetLocal,applyState};
+  return {draw,apply,undoLocal,resetLocal,applyState,winner};
 })();
 
 /* ============================================================
@@ -1103,7 +1175,7 @@ const Origami=(()=>{
     $('pp-cap').innerHTML=`<b>${S.step+1}/${STEPS.length}</b>${cap}`;
     $('pp-prev').disabled=S.step===0; $('pp-next').disabled=S.step===STEPS.length-1;
     $('pp-prev').style.opacity=S.step===0?.35:1; $('pp-next').style.opacity=S.step===STEPS.length-1?.35:1;
-    placeCur();
+    placeCur(); Overlay.badge();
   }
   function setStep(n,broadcast=true){ const v=Math.max(0,Math.min(STEPS.length-1,n|0)); if(v===S.step&&!broadcast) return; S.step=v; render(); if(broadcast) Net.send({t:'step',n:v}); }
   function placeCur(){ const c=$('pcur'); c.style.left=(S.pcur[0]*100)+'%'; c.style.top=(S.pcur[1]*100)+'%'; }
@@ -1125,11 +1197,56 @@ const Origami=(()=>{
 })();
 
 /* ============================================================
+   叠在对方画面上：互动表情（两边同步飘一下）+ 左下角「在玩什么」小标。
+   表情走中继的快通路 —— 丢了就丢了、不进日志，断线重连不会补出一串心来。
+   小标两边各自从本地状态推，不用传。
+   ============================================================ */
+const REACTS={
+  heart:{name:'爱心',  icon:'#rx-heart'},
+  thumb:{name:'赞',    icon:'#rx-thumb'},
+  laugh:{name:'哈哈',  icon:'#rx-laugh'},
+  party:{name:'太棒了',icon:'#rx-party'},
+  tea:  {name:'喝口茶',icon:'#ic-tea'},
+};
+const Overlay=(()=>{
+  const ov=$('ov'), MAX=12;
+  function fx(k){
+    if(!REACTS[k]) return;
+    while(ov.querySelectorAll('.fx').length>=MAX) ov.querySelector('.fx').remove();
+    const d=document.createElement('div'); d.className='fx';
+    d.style.left=(15+Math.random()*70)+'%';
+    d.innerHTML=`<svg viewBox="0 0 48 48"><use href="${REACTS[k].icon}"/></svg>`;
+    ov.appendChild(d); setTimeout(()=>d.remove(),1900);
+  }
+  function send(k){ if(!S.session) return; fx(k); Net.send({t:'icon',k}); }
+  function clear(){ ov.querySelectorAll('.fx').forEach(e=>e.remove()); }
+  function badge(){
+    const b=$('badge'); if(!S.session){ b.innerHTML=''; b.classList.remove('hot'); return; }
+    const g=GAMES[S.game]||GAMES.chat, my=S.session.color, peer=friendName(S.session.peer);
+    let txt=g.name, hot=false;
+    if(S.game==='gomoku'){ const w=Gomoku.winner();
+      if(w) txt=w===my?'你赢了':peer+' 赢了'; else if(S.turn===my){ txt='该你了'; hot=true; } else txt='等 '+peer; }
+    else if(S.game==='origami') txt='折纸 第 '+(S.step+1)+' 步';
+    else txt='聊聊天';
+    b.classList.toggle('hot',hot);
+    b.innerHTML=`<svg viewBox="0 0 48 48"><use href="${g.icon}"/></svg><span>${esc(txt)}</span>`;
+  }
+  const items=Object.entries(REACTS);
+  $('react').innerHTML=items.map(([k,r])=>`<button data-k="${k}" aria-label="${r.name}" title="${r.name}"><svg viewBox="0 0 48 48"><use href="${r.icon}"/></svg></button>`).join('');
+  $('react').querySelectorAll('button').forEach(b=>b.onclick=()=>send(b.dataset.k));
+  $('r-list').innerHTML=items.map(([k,r])=>`<button class="gcard" data-nav data-k="${k}" aria-label="${r.name}"><svg viewBox="0 0 48 48"><use href="${r.icon}"/></svg><b>${r.name}</b></button>`).join('');
+  $('r-list').querySelectorAll('.gcard').forEach(b=>b.onclick=()=>{ send(b.dataset.k); Sheets.close('sh-react'); });
+  $('d-react').onclick=()=>Sheets.open('sh-react');
+  return {fx,send,clear,badge};
+})();
+
+/* ============================================================
    开门
    ?surface=table     投影在桌上（板子上的浏览器用这个）；?surface=hand 恢复手持
    ?name=奶奶         预填名字直接进门 —— 家人帮老人设置时用
    ?user=K7M2QX       用同一个身份在另一台设备上登录（比如桌子 + 奶奶的手机）
    ?add=K7M2QX        打开就加这个人为好友 —— 孩子发给老人的邀请链接
+   ?cam=FaceTime      通话用哪只摄像头（名字片段，记住；?cam=off 清掉）。默认自动避开影石那只
    ============================================================ */
 (()=>{
   const P=new URLSearchParams(location.search);
@@ -1144,7 +1261,7 @@ const Origami=(()=>{
   else if(P.get('name')) me={code:(me&&me.code)||newCode(),name:P.get('name')};
   const pendingAdd=(P.get('add')||'').toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,6);
   if(pendingAdd) try{ sessionStorage.setItem('byside.pendingAdd',pendingAdd); }catch(e){}
-  if([...P.keys()].some(k=>['surface','name','user','add','agora','token','channel','relay'].includes(k)))
+  if([...P.keys()].some(k=>['surface','name','user','add','agora','token','channel','relay','cam'].includes(k)))
     history.replaceState(null,'',location.pathname);
 
   if(me&&me.name){ ME=me; store.me=me; enter(); }
