@@ -2,7 +2,7 @@
 """
 录帧到文件夹 —— D1 清单里"回报率最高的半天"。
 
-    python capture.py -o frames/desk01 -n 60             # 本机摄像头
+    python tools/capture.py -o frames/desk01 -n 60       # 本机摄像头
     python capture.py -o frames/desk01 -s http://手机IP:8080/video
     python capture.py -o frames/desk01 -s synth -n 30    # 没有硬件也能造一批
 

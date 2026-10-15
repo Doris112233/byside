@@ -44,7 +44,7 @@ def make_board(n=15, size=(960, 720), quad=None, stones=None,
     gy = np.linspace(-1, 1, h)[:, None]
     img *= 1.0 + light_gradient * (0.7 * gx + 0.3 * gy)
 
-    from byside_sensor.detect.classic import grid_backproject
+    from byside_sensor.calib.homography import grid_backproject
     bp = grid_backproject(quad, n)
     pts = np.array([[bp(i, j) for i in range(n)] for j in range(n)])
     a, b = pts[0, 0], pts[0, 1]

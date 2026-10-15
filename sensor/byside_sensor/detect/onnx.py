@@ -9,7 +9,7 @@ YOLO (ONNX) 棋子检测 —— classic 算法之外的第二条路，接口和 
     2. 标注     两类：0 = black，1 = white（labelImg / Roboflow 都行，导出 YOLO 格式）
     3. 训练     pip install ultralytics; yolo train model=yolov8n.pt data=stones.yaml imgsz=640
     4. 导出     yolo export model=runs/detect/train/weights/best.pt format=onnx
-    5. 跑       python app.py --headless --detector onnx --model best.onnx ...
+    5. 跑       byside-sensor --detector onnx --model best.onnx ...
        推理依赖  pip install onnxruntime   （板子上用 onnxruntime 的 aarch64 轮子即可）
 
 模型输出按 YOLOv8 的 (1, 4+nc, 8400) 或 (1, 8400, 4+nc) 解析，xywh 为输入图像素坐标。
@@ -82,13 +82,17 @@ class OnnxStoneDetector:
             res.append(((cx - px) / r, (cy - py) / r, stone, conf))
         return res
 
+    name = "onnx"
+
     def classify(self, bgr, bp, n=15, seat=None):
-        """和 classify_abs 同样的返回：(cls[n*n] int8, score[n*n] float32, cell)。"""
-        from byside_sensor.detect import classic as bcv
-        cell = bcv.cell_size(bp)
+        """Detector 接口：返回 GridResult(cls, score, cell)。"""
+        from byside_sensor.calib.homography import cell_size
+        from byside_sensor.detect.base import GridResult
+        cell = cell_size(bp)
         if not (cell > 4):
-            return None, None, cell
-        return detections_to_grid(self.detect(bgr), bp, n, cell, seat)
+            return GridResult(None, None, cell)
+        cls, score, cell = detections_to_grid(self.detect(bgr), bp, n, cell, seat)
+        return GridResult(cls, score, cell)
 
 
 def detections_to_grid(dets, bp, n, cell, seat=None, max_dist=0.5):
@@ -112,10 +116,10 @@ def detections_to_grid(dets, bp, n, cell, seat=None, max_dist=0.5):
 
 if __name__ == "__main__":
     # 不需要模型的自测：假检测 → 格点映射
-    from byside_sensor.detect import classic as bcv
+    from byside_sensor.calib.homography import cell_size, grid_backproject
     quad = [[100, 100], [800, 100], [800, 800], [100, 800]]
-    bp = bcv.grid_backproject(quad, 15)
-    cell = bcv.cell_size(bp)
+    bp = grid_backproject(quad, 15)
+    cell = cell_size(bp)
     px = lambda i, j: bp(i, j)
     dets = [(*px(7, 7), BLACK, .9),                      # 正中
             (px(0, 0)[0] + cell * .3, px(0, 0)[1] - cell * .2, WHITE, .8),   # 偏一点仍归到 (0,0)

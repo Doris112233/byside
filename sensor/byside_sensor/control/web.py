@@ -1,22 +1,21 @@
-"""
-板上的小 HTTP 服务 —— 手机打开就是控制台。
+"""板上的小 HTTP 服务 —— 手机打开就是控制台。
 
-存在的理由很实在：板子只有一路 HDMI，已经给了投影仪，
-所以控制界面没有别的地方可去。
+存在的理由很实在：板子只有一路 HDMI，已经给了投影仪，所以控制界面没有别的地方可去。
 
   /              控制页（标定四角、切场景、看状态）
   /preview.jpg   当前相机帧 + 识别叠加（调试用）
-  /stream.mjpg   桌面画面推流（对端拿这个看你桌上在干嘛）
+  /stream.mjpg   桌面画面推流（网页通话用它当视频轨）
   /state         JSON 状态
   /config        POST 配置
 """
+from __future__ import annotations
+
 import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import cv2
-import numpy as np
+from byside_sensor.scenes import SCENE_IDS
 
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,user-scalable=no">
@@ -55,7 +54,7 @@ button:active{opacity:.6}
   <button onclick="save()">保存标定</button>
 </div></div>
 
-<div class=card><div class=lbl>投影方框 · 投不全就调这里</div>
+<div class=card><div class=lbl>投影方框 · 只对 pygame 直投有用</div>
 <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:10px">
   <span style="font-size:12px;color:#6a7380">大小</span>
   <input type=range id=mg min=2 max=42 step=1 oninput="setMargin(this.value)">
@@ -67,22 +66,17 @@ button:active{opacity:.6}
   <span></span><button onclick="nudge(0,1)">↓</button><span></span>
 </div></div>
 
-<div class=card><div class=lbl>场景</div><div class=row>
-  <button onclick="scene('gomoku')" id=sg>下棋</button>
-  <button onclick="scene('origami')" id=sd>折纸</button>
-</div></div>
+<div class=card><div class=lbl>场景</div><div class=row id=scenes></div></div>
 
 <div class=card><div class=lbl>状态</div><div class=st id=stat></div></div>
 
-<div class=card><div class=lbl>对方桌面</div>
-<img id=rv style="width:100%;border-radius:8px;background:#000" src="">
-<div class=row><button onclick="toggleRemote()" id=br>连接对端画面</button></div></div>
-
 </div><script>
+const SCENES=%SCENES%;
 let Q=[[.2,.2],[.8,.2],[.8,.8],[.2,.8]],drag=-1,st={};
 const stage=document.getElementById('stage'),pv=document.getElementById('pv');
 function mk(){for(let k=0;k<4;k++){const d=document.createElement('div');d.className='h';d.dataset.k=k;
- d.innerHTML='<i></i><i class=b></i><b>'+(k+1)+'</b>';stage.appendChild(d);}pos();}
+ d.innerHTML='<i></i><i class=b></i><b>'+(k+1)+'</b>';stage.appendChild(d);}pos();
+ document.getElementById('scenes').innerHTML=SCENES.map(s=>'<button onclick="scene(\\''+s+'\\')" data-s="'+s+'">'+s+'</button>').join('');}
 function pos(){[...stage.querySelectorAll('.h')].forEach((d,k)=>{
  d.style.left=(Q[k][0]*pv.clientWidth)+'px';d.style.top=(Q[k][1]*pv.clientHeight)+'px';});}
 function xy(e){const r=pv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;
@@ -102,28 +96,24 @@ function nudge(dx,dy){const o=(dx||dy)?[(st.offset?st.offset[0]:0)+dx*0.01,(st.o
 function mode(m){fetch('/config',{method:'POST',body:JSON.stringify({mode:m})});}
 function scene(s){fetch('/config',{method:'POST',body:JSON.stringify({scene:s})});}
 function save(){fetch('/config',{method:'POST',body:JSON.stringify({save:1})}).then(()=>alert('已保存'));}
-let remoteOn=false;
-function toggleRemote(){remoteOn=!remoteOn;
- document.getElementById('rv').src=remoteOn?(st.peer||'')+'/stream.mjpg':'';
- document.getElementById('br').classList.toggle('on',remoteOn);}
 function tick(){
  pv.src='/preview.jpg?t='+Date.now();
  fetch('/state').then(r=>r.json()).then(s=>{st=s;
-  if(!drag&&s.quad){Q=s.quad;pos();}
+  if(drag<0&&s.quad){Q=s.quad;pos();}
   const mg=document.getElementById('mg');
   if(document.activeElement!==mg&&s.margin!=null){mg.value=Math.round(s.margin*100);
    document.getElementById('mgv').textContent=s.margin.toFixed(2);}
   document.getElementById('bc').classList.toggle('on',s.mode=='calib');
   document.getElementById('bp').classList.toggle('on',s.mode=='play');
-  document.getElementById('sg').classList.toggle('on',s.scene=='gomoku');
-  document.getElementById('sd').classList.toggle('on',s.scene=='origami');
+  document.querySelectorAll('#scenes button').forEach(b=>b.classList.toggle('on',s.scene==b.dataset.s));
   document.getElementById('stat').innerHTML=
    '<div><span>相机</span><b class="'+(s.fps>5?'ok':'bad')+'">'+s.fps.toFixed(1)+' fps</b></div>'+
-   '<div><span>识别耗时</span><b>'+s.ms.toFixed(0)+' ms</b></div>'+
+   '<div><span>识别耗时</span><b>'+s.ms.toFixed(0)+' ms · '+s.detector+'</b></div>'+
    '<div><span>自动标定</span><b class="'+(s.calib_ok?'ok':'')+'">'+(s.auto?(s.mode=='calib'?('看到 '+s.calib_found+'/4 个标记'+(s.calib_ok?' ✓':'')):'开'):'关')+'</b></div>'+
    '<div><span>桌上棋子</span><b>'+s.stones+'</b></div>'+
    '<div><span>遮挡</span><b class="'+(s.occluded?'bad':'ok')+'">'+(s.occluded?'有手':'无')+'</b></div>'+
    '<div><span>格距</span><b>'+s.cell.toFixed(1)+' px</b></div>'+
+   '<div><span>这局认</span><b>'+(s.seat||'等 role')+'</b></div>'+
    '<div><span>温度</span><b>'+s.temp+' °C</b></div>'+
    '<div><span>房间</span><b>'+(s.room||'-')+'</b></div>'+
    '<div><span>对端</span><b class="'+((s.peers>1)?'ok':'bad')+'">'+((s.peers>1)?'已连接':'无')+'</b></div>'+
@@ -134,21 +124,23 @@ mk();window.addEventListener('resize',pos);pv.onload=pos;setInterval(tick,700);t
 </script></body></html>"""
 
 
-class _H(BaseHTTPRequestHandler):
-    app = None
+class _Handler(BaseHTTPRequestHandler):
+    app = None            # Pipeline，serve() 时注入
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *a):
         pass
 
-    def _send(self, code, ctype, body, extra=None):
+    def handle_error(self, request, client_address):
+        # 看 MJPEG 的一方把连接掐了很正常，别往日志里刷栈
+        pass
+
+    def _send(self, code, ctype, body):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
-        for k, v in (extra or {}).items():
-            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -156,7 +148,8 @@ class _H(BaseHTTPRequestHandler):
         a = self.app
         path = self.path.split("?")[0]
         if path == "/":
-            self._send(200, "text/html; charset=utf-8", PAGE.encode())
+            page = PAGE.replace("%SCENES%", json.dumps([s for s in SCENE_IDS if s != "chat"]))
+            self._send(200, "text/html; charset=utf-8", page.encode())
         elif path == "/preview.jpg":
             jpg = a.preview_jpeg()
             self._send(200, "image/jpeg", jpg) if jpg else self._send(503, "text/plain", b"no frame")
@@ -168,20 +161,19 @@ class _H(BaseHTTPRequestHandler):
             self._send(404, "text/plain", b"404")
 
     def _stream(self, a):
-        """给对端看桌面用的 MJPEG 流。分辨率和帧率都压低——
-        识别优先，视频随时可以降级，它掉了不影响下棋画画。"""
+        """MJPEG 流。分辨率和帧率都压低 —— 识别优先，视频随时可以降级。"""
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         try:
-            while True:
+            while a.running:
                 jpg = a.stream_jpeg()
                 if jpg:
                     self.wfile.write(b"--f\r\nContent-Type: image/jpeg\r\nContent-Length: "
                                      + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
-                time.sleep(1.0 / a.stream_fps)
+                time.sleep(1.0 / a.cfg.stream_fps)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
@@ -191,13 +183,13 @@ class _H(BaseHTTPRequestHandler):
             cfg = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
             cfg = {}
-        self.app.apply_config(cfg)
+        if isinstance(cfg, dict):
+            self.app.apply_config(cfg)
         self._send(200, "application/json", b'{"ok":1}')
 
 
-def serve(app, port=8080):
-    _H.app = app
-    srv = ThreadingHTTPServer(("0.0.0.0", port), _H)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
+def serve(app, port: int, bind: str = "0.0.0.0") -> ThreadingHTTPServer:
+    _Handler.app = app
+    srv = ThreadingHTTPServer((bind, port), _Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True, name="control-http").start()
     return srv

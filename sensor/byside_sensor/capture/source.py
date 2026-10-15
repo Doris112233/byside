@@ -1,44 +1,58 @@
-"""
-帧来源 —— 上层算法不该关心图是从哪来的。
+"""帧来源 —— 上层算法不该关心图是从哪来的。
 
-    FrameSource.open("0")                    本机摄像头
+    FrameSource.open("0")                         本机摄像头
     FrameSource.open("http://手机IP:8080/video")   手机 IP 摄像头（MJPEG）
-    FrameSource.open("frames/desk01")        文件夹回放
-    FrameSource.open("synth")                合成图（无硬件也能跑）
+    FrameSource.open("frames/desk01")             文件夹回放
+    FrameSource.open("synth")                     合成图（无硬件也能跑）
 
-文件夹回放是这一层存在的主要理由：算法迭代不需要板子、不需要投影仪、
-不需要摆棋子。改一版一秒钟知道好不好，这是整个冲刺里最省时间的一件事。
+文件夹回放是这一层存在的主要理由：算法迭代不需要板子、不需要投影仪、不需要摆棋子。
+每个来源有一个 camera_id；多相机的一体机用 rig.CameraRig 把几个来源合在一起。
 """
+from __future__ import annotations
+
 import glob
 import os
 import threading
 import time
+from dataclasses import dataclass
 
 import numpy as np
 
 
+@dataclass(frozen=True)
+class Frame:
+    image: np.ndarray      # BGR 彩色或灰度
+    ts: float              # time.monotonic()
+    camera_id: str
+
+
 class FrameSource:
-    def __init__(self, kind, label):
+    def __init__(self, kind: str, label: str, camera_id: str = "cam0"):
         self.kind = kind
         self.label = label
+        self.camera_id = camera_id
 
     @staticmethod
-    def open(spec, loop=True, fps=None, width=960, color=False):
-        """color=True 返回 BGR 彩色帧（画画要用），否则返回灰度。"""
+    def open(spec, loop=True, fps=None, width=960, color=False, camera_id: str = "cam0") -> "FrameSource":
+        """color=True 返回 BGR 彩色帧，否则返回灰度。"""
         s = str(spec)
         if s == "synth":
-            return SynthSource()
+            return SynthSource(camera_id=camera_id)
         if s.isdigit() or s.startswith(("http://", "https://", "rtsp://", "/dev/video")):
-            return CameraSource(int(s) if s.isdigit() else s, width=width, color=color)
+            return CameraSource(int(s) if s.isdigit() else s, width=width, color=color, camera_id=camera_id)
         if os.path.isdir(s):
-            return FolderSource(s, loop=loop, fps=fps, color=color)
+            return FolderSource(s, loop=loop, fps=fps, color=color, camera_id=camera_id)
         raise ValueError(f"认不出的帧来源: {spec}")
 
-    def read(self):
-        """返回灰度 uint8 图，没有下一帧时返回 None。"""
+    def read(self) -> np.ndarray | None:
+        """返回一帧图，没有下一帧时返回 None。"""
         raise NotImplementedError
 
-    def close(self):
+    def read_frame(self) -> Frame | None:
+        img = self.read()
+        return None if img is None else Frame(img, time.monotonic(), self.camera_id)
+
+    def close(self) -> None:
         pass
 
     def __iter__(self):
@@ -51,20 +65,17 @@ class FrameSource:
 
 class CameraSource(FrameSource):
     """本机 USB 摄像头，或手机 IP 摄像头的 MJPEG 流 —— 同一套代码。
+    后台线程一直读、只留最新一帧。不这样做的话 OpenCV 内部会攒一个队列，画面越跑越慢。"""
 
-    后台线程一直读、只留最新一帧。不这样做的话 OpenCV 内部会攒一个队列，
-    你看到的画面会比桌面上真实发生的慢好几秒，而且越跑越慢。
-    """
-
-    def __init__(self, src, width=960, color=False):
-        super().__init__("camera", str(src))
+    def __init__(self, src, width=960, color=False, camera_id: str = "cam0"):
+        super().__init__("camera", str(src), camera_id)
         import cv2
         self.cv2 = cv2
         self.color = color
         self.cap = cv2.VideoCapture(src)
         if isinstance(src, int):
-            # USB2.0 下必须走 MJPG，否则 1080p 的 YUY2 带宽不够，帧率掉到个位数。
-            # 顺序有讲究：先设 fourcc 再设分辨率。
+            # USB2.0 下必须走 MJPG，否则 1080p 的 YUY2 带宽不够。顺序有讲究：先设 fourcc 再设分辨率。
+            # macOS 的 AVFoundation 不认 fourcc，set 会返回 False，无妨。
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(width * 9 / 16))
@@ -95,18 +106,18 @@ class CameraSource(FrameSource):
             time.sleep(0.05)
         return None
 
-    def lock_exposure(self, exposure=None, gain=None):
-        """关掉自动曝光/白平衡/增益。投影一亮自动曝光就压暗整幅画面，
-        识别阈值全漂——症状是「时好时坏、越调越乱」。只对 USB 摄像头有效。"""
+    def lock_exposure(self, exposure=None, gain=None) -> list[str]:
+        """关掉自动曝光/白平衡/增益（Linux v4l2）。投影一亮自动曝光就压暗整幅画面，识别阈值全漂。"""
         import subprocess
         dev = self.label if self.label.startswith("/dev/") else f"/dev/video{self.label}"
-        cmds = [f"auto_exposure=1", f"white_balance_automatic=0"]
-        if exposure: cmds.append(f"exposure_time_absolute={exposure}")
-        if gain: cmds.append(f"gain={gain}")
+        cmds = ["auto_exposure=1", "white_balance_automatic=0"]
+        if exposure:
+            cmds.append(f"exposure_time_absolute={exposure}")
+        if gain:
+            cmds.append(f"gain={gain}")
         out = []
         for c in cmds:
-            r = subprocess.run(["v4l2-ctl", "-d", dev, "-c", c],
-                               capture_output=True, text=True)
+            r = subprocess.run(["v4l2-ctl", "-d", dev, "-c", c], capture_output=True, text=True)
             out.append(f"{c}: {'ok' if r.returncode == 0 else r.stderr.strip()}")
         return out
 
@@ -118,8 +129,8 @@ class CameraSource(FrameSource):
 class FolderSource(FrameSource):
     """文件夹回放。文件名排序即时间顺序。"""
 
-    def __init__(self, path, loop=True, fps=None, color=False):
-        super().__init__("folder", path)
+    def __init__(self, path, loop=True, fps=None, color=False, camera_id: str = "cam0"):
+        super().__init__("folder", path, camera_id)
         self.color = color
         self.files = sorted(
             f for f in glob.glob(os.path.join(path, "*"))
@@ -157,8 +168,8 @@ class FolderSource(FrameSource):
 class SynthSource(FrameSource):
     """合成图 —— 一个硬件都没有的时候也能把整条链路跑通。"""
 
-    def __init__(self, seed=0):
-        super().__init__("synth", "synthetic")
+    def __init__(self, seed=0, camera_id: str = "synth"):
+        super().__init__("synth", "synthetic", camera_id)
         self.seed = seed
         self.quad = None
         self.truth = None

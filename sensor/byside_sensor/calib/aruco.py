@@ -1,7 +1,7 @@
 """
 投影 ArUco 自动标定 —— 不用再拖四个角。
 
-网页在标定模式下把 4 个 4x4 ArUco 投在棋盘里、离四个角各 1.5 格的格点上
+网页在标定模式下把 4 个 4x4 ArUco 投在棋盘里、离四个角各 inset 格的格点上
 （id 0..3 = 左上、右上、右下、左下，和 quad 的顺序一致；不直接压在角上是因为
 棋盘外边距不够放下标记）。朝下的摄像头认出 4 个中心，用单应外推回四个角就是 quad。
 
@@ -16,16 +16,13 @@
 import cv2
 import numpy as np
 
-N = 15          # 棋盘路数
-INSET = 1.5     # 标记中心离角点的格数，和网页 Gomoku.draw 里的 IN 一致
+from byside_sensor.protocol import constants as _constants
 
-# 和 docs/app/index.html 的 ARUCO 数组逐字节一致。1 = 黑格。
-PATTERNS = [
-    [[0, 1, 1, 0], [1, 0, 0, 1], [1, 1, 0, 0], [0, 0, 1, 1]],
-    [[1, 0, 1, 0], [0, 1, 1, 1], [1, 1, 0, 0], [0, 1, 0, 1]],
-    [[1, 1, 0, 1], [0, 0, 1, 0], [1, 0, 1, 1], [0, 1, 1, 0]],
-    [[0, 1, 0, 1], [1, 1, 1, 0], [0, 0, 1, 1], [1, 0, 0, 1]],
-]
+N = _constants().n            # 棋盘路数
+INSET = _constants().inset    # 标记中心离角点的格数，和网页 calib/pattern.ts 一致
+
+# 图案来自 protocol/constants.json，和网页画的一样。1 = 黑格。
+PATTERNS = [[list(row) for row in p] for p in _constants().patterns]
 
 
 def dictionary():
