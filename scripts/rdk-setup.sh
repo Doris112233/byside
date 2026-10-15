@@ -7,6 +7,9 @@
 #    桌面界面  桌面会话里自启的浏览器，投影模式全屏
 #    中继      云上的（--server），或者板子自己跑一个（--local-relay）
 #
+#  板子上用 rdk 分支（在板子上实测通过的稳定版；开发在 main，验过再 fast-forward 过来）：
+#    git clone -b rdk https://github.com/Doris112233/byside
+#
 #  用法（在板子上）：
 #    scripts/rdk-setup.sh --name 奶奶 --server wss://你的域名/ws
 #    scripts/rdk-setup.sh --name 奶奶 --local-relay                 局域网自测
@@ -14,6 +17,8 @@
 # ============================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CUR="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+[ "$CUR" = rdk ] || echo "⚠️ 当前在分支「$CUR」，板子上建议用 rdk 分支（稳定版）：git checkout rdk"
 NAME=""; USER_CODE=""; SERVER=""; CAMERA="0"; LOCAL=0
 while [ $# -gt 0 ]; do
   case "$1" in

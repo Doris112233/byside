@@ -59,8 +59,12 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout key.pem -out cert.p
 ## 两种跑法：电脑版 / 板子版
 
 **同一份代码，两个启动脚本。** 网页、中继、识别算法、网络层全是一份；
-不同的只有三处：摄像头从哪来、浏览器跑在哪、怎么启动。所以不分 branch——
+不同的只有三处：摄像头从哪来、浏览器跑在哪、怎么启动。所以**开发不分 branch**——
 分了以后每个修改都得做两遍，两边迟早会不一样。
+
+仓库里有一个 `rdk` 分支，但它不是开发线，是「在板子上实测通过的稳定版」：
+日常改动都进 `main`；每次在 RDK 上跑通一轮，就把 `rdk` fast-forward 到那个提交
+（`git push origin main:rdk`）。板子上克隆的是 `rdk` 分支，不会被 `main` 上还没在板子验过的改动影响。
 
 每一端都是三样东西：
 
@@ -99,9 +103,10 @@ scripts/pc.sh --server wss://你的域名/ws           # 连云上的中继
 
 ### 板子版
 
-在板子上跑一次，之后插电开机全自动：
+板子上拿 `rdk` 分支（稳定版），跑一次，之后插电开机全自动：
 
 ```bash
+git clone -b rdk https://github.com/Doris112233/byside && cd byside
 scripts/rdk-setup.sh --name 奶奶 --server wss://你的域名/ws
 scripts/rdk-setup.sh --name 奶奶 --local-relay      # 局域网自测
 ```
