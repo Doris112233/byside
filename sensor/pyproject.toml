@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "byside-sensor"
+version = "0.1.0"
+description = "咫尺识别端：摄像头 → 棋子坐标 → 中继"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.8",
+  "websocket-client>=1.7",
+]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.17"]
+projector = ["pygame>=2.5"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+byside-sensor = "byside_sensor.app:main"
+
+[tool.setuptools.packages.find]
+include = ["byside_sensor*"]
+
+[tool.setuptools.package-data]
+byside_sensor = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

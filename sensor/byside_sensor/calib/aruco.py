@@ -9,7 +9,7 @@
 几百个 id 互相靠汉明距离区分，4 个够了且这 4 个早就画在网页里。
 注意位极性：网页 1 = 黑，OpenCV 的 Dictionary 1 = 白，所以这里取反。
 
-    from calib_aruco import ProjectedMarkers
+    from byside_sensor.calib.aruco import ProjectedMarkers
     pm = ProjectedMarkers()
     quad = pm.quad(gray)          # 归一化到 [0,1] 的 [[x,y]×4]，找不齐 4 个返回 None
 """

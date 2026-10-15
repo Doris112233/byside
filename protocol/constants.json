@@ -1,0 +1,27 @@
+{
+  "$comment": "三端共用的常量。网页 import 这个 JSON，中继和识别端读这个文件。改这里就是改三边。",
+  "board": {
+    "n": 15,
+    "star_points": [[3, 3], [11, 3], [3, 11], [11, 11], [7, 7]]
+  },
+  "stone": { "empty": 0, "black": 1, "white": 2 },
+  "calib": {
+    "$comment": "ArUco 标记放在离四角 inset 格的格点上；标记边长 marker_cells 格，外面垫 quiet_cells 格亮底。patterns 1 = 黑格（网页画法）；OpenCV 字典位极性相反，识别端取反。投影的环内沿 ring_inner_cells 必须大于识别内圆 detect_inner_cells，否则投影会被当成真棋子。",
+    "inset": 1.5,
+    "marker_cells": 2.0,
+    "quiet_cells": 1.25,
+    "ring_inner_cells": 0.36,
+    "detect_inner_cells": 0.30,
+    "patterns": [
+      [[0, 1, 1, 0], [1, 0, 0, 1], [1, 1, 0, 0], [0, 0, 1, 1]],
+      [[1, 0, 1, 0], [0, 1, 1, 1], [1, 1, 0, 0], [0, 1, 0, 1]],
+      [[1, 1, 0, 1], [0, 0, 1, 0], [1, 0, 1, 1], [0, 1, 1, 0]],
+      [[0, 1, 0, 1], [1, 1, 1, 0], [0, 0, 1, 1], [1, 0, 0, 1]]
+    ]
+  },
+  "fast": ["frame", "ink", "ping", "pong", "cursor", "point", "icon", "calib"],
+  "friend_code": { "alphabet": "23456789ABCDEFGHJKMNPQRSTUVWXYZ", "length": 6 },
+  "ports": { "relay_http": 8778, "relay_https": 8443, "sensor_control": 8080 },
+  "table_camera_regex": "insta\\s*360|影石|\\blink\\b",
+  "timeouts": { "invite_s": 45, "accepting_s": 120, "token_ttl_s": 7200, "room_gc_s": 600 }
+}

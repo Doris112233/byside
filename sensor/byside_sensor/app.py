@@ -20,13 +20,12 @@ import time
 import cv2
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import byside_cv as bcv
-import web
-from netlink import NetLink
-from framesource import FrameSource
+from byside_sensor.detect import classic as bcv
+from byside_sensor.control import web
+from byside_sensor.net.link import NetLink
+from byside_sensor.capture.source import FrameSource
 try:
-    from calib_aruco import ProjectedMarkers      # 要 cv2.aruco（opencv-python ≥ 4.7 自带）
+    from byside_sensor.calib.aruco import ProjectedMarkers      # 要 cv2.aruco（opencv-python ≥ 4.7 自带）
 except Exception as _e:                           # 没有就只剩手动拖四个角
     ProjectedMarkers = None
     print(f"[标定] 自动标定不可用：{_e}", flush=True)
@@ -380,7 +379,7 @@ class App:
     # ---------- 主循环 ----------
     def run(self, fullscreen=True):
         import pygame
-        import render as rnd     # 只有真要出画面时才需要 pygame
+        from byside_sensor.projector import pygame_out as rnd     # 只有真要出画面时才需要 pygame
         r = rnd.Renderer(self.n, fullscreen=fullscreen)
         print(f"投影分辨率 {r.w}x{r.h}")
         t = threading.Thread(target=self.capture_loop, daemon=True)
@@ -442,7 +441,7 @@ def main():
     if a.detector == "onnx":
         if not a.model:
             sys.exit("--detector onnx 需要 --model best.onnx")
-        from detect_onnx import OnnxStoneDetector
+        from byside_sensor.detect.onnx import OnnxStoneDetector
         app.detector = OnnxStoneDetector(a.model)
         print(f"[识别] 用 onnx 模型 {a.model}", flush=True)
     if a.server:

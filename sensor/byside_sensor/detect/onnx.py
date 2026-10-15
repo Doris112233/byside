@@ -84,7 +84,7 @@ class OnnxStoneDetector:
 
     def classify(self, bgr, bp, n=15, seat=None):
         """和 classify_abs 同样的返回：(cls[n*n] int8, score[n*n] float32, cell)。"""
-        import byside_cv as bcv
+        from byside_sensor.detect import classic as bcv
         cell = bcv.cell_size(bp)
         if not (cell > 4):
             return None, None, cell
@@ -112,9 +112,7 @@ def detections_to_grid(dets, bp, n, cell, seat=None, max_dist=0.5):
 
 if __name__ == "__main__":
     # 不需要模型的自测：假检测 → 格点映射
-    import os, sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import byside_cv as bcv
+    from byside_sensor.detect import classic as bcv
     quad = [[100, 100], [800, 100], [800, 800], [100, 800]]
     bp = bcv.grid_backproject(quad, 15)
     cell = bcv.cell_size(bp)

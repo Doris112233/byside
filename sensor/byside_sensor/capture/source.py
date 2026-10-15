@@ -164,7 +164,7 @@ class SynthSource(FrameSource):
         self.truth = None
 
     def read(self):
-        import synth
+        from byside_sensor.capture import synth
         img, truth, quad = synth.make_board(seed=self.seed)
         self.seed += 1
         self.truth, self.quad = truth, quad

@@ -13,9 +13,8 @@ import sys
 import time
 import numpy as np
 
-sys.path.insert(0, __file__.rsplit("/", 1)[0])
-import byside_cv as cv
-import synth
+from byside_sensor.detect import classic as cv
+from byside_sensor.capture import synth
 
 BLACK, WHITE, EMPTY = 1, 2, 0
 

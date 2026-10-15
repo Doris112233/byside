@@ -1,0 +1,15 @@
+{
+  "name": "byside",
+  "private": true,
+  "version": "0.1.0",
+  "description": "咫尺 BySide：把两张异地的桌子连成一张",
+  "workspaces": ["web", "relay"],
+  "scripts": {
+    "dev": "npm run dev --workspace web",
+    "build": "npm run build --workspace web && npm run build --workspace relay",
+    "relay": "npm run start --workspace relay",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": { "node": ">=20" }
+}

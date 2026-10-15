@@ -7,20 +7,24 @@
 const http=require('http'), https=require('https'), fs=require('fs'),
       path=require('path'), crypto=require('crypto'), os=require('os'), zlib=require('zlib');
 
-const ROOT=__dirname;
+const REPO=path.resolve(__dirname,'..','..');          // relay/src → 仓库根
 const HTTP_PORT=+(process.env.HTTP_PORT||8778);
 const HTTPS_PORT=+(process.env.HTTPS_PORT||8443);
 
-/* ---------------- 静态文件 ---------------- */
+/* ---------------- 静态文件 ----------------
+   只服务两个目录：/app/ → web/dist（构建产物），其余 → docs/（介绍页）。
+   以前是整个仓库根目录对外，agora.env、key.pem、.git 都能下载 —— 不能再那样。 */
+const STATIC={app:path.join(REPO,'web','dist'), site:path.join(REPO,'docs')};
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8',
   '.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.svg':'image/svg+xml',
-  '.ico':'image/x-icon','.json':'application/json'};
+  '.ico':'image/x-icon','.json':'application/json','.woff2':'font/woff2','.webp':'image/webp'};
 function serve(req,res){
   let p=decodeURIComponent((req.url||'/').split('?')[0]);
-  if(p==='/'||p==='') p='/index.html';
-  if(p==='/app'||p==='/app/') p='/docs/app/index.html';
-  const file=path.join(ROOT,path.normalize(p).replace(/^(\.\.[/\\])+/,''));
-  if(!file.startsWith(ROOT)){ res.writeHead(403).end('forbidden'); return; }
+  let root=STATIC.site;
+  if(p==='/app'||p.startsWith('/app/')){ root=STATIC.app; p=p.slice(4)||'/'; }
+  if(p===''||p.endsWith('/')) p+='index.html';
+  const file=path.join(root,path.normalize(p));
+  if(!file.startsWith(root+path.sep)||path.basename(file).startsWith('.')){ res.writeHead(404).end('not found'); return; }
   fs.readFile(file,(err,buf)=>{
     if(err){ res.writeHead(404,{'content-type':'text/plain; charset=utf-8'}).end('not found'); return; }
     res.writeHead(200,{'content-type':MIME[path.extname(file).toLowerCase()]||'application/octet-stream',
@@ -42,7 +46,7 @@ function agoraConfig(){
   const cfg={appId:process.env.AGORA_APP_ID||'', cert:process.env.AGORA_APP_CERT||''};
   if(!cfg.appId||!cfg.cert){
     try{
-      for(const line of fs.readFileSync(path.join(ROOT,'agora.env'),'utf8').split('\n')){
+      for(const line of fs.readFileSync(path.join(REPO,'agora.env'),'utf8').split('\n')){
         const m=line.match(/^\s*(AGORA_APP_ID|AGORA_APP_CERT)\s*=\s*([0-9a-fA-F]{32})\s*$/);
         if(m){ if(m[1]==='AGORA_APP_ID'&&!cfg.appId) cfg.appId=m[2]; if(m[1]==='AGORA_APP_CERT'&&!cfg.cert) cfg.cert=m[2]; }
       }
@@ -360,13 +364,13 @@ httpSrv.listen(HTTP_PORT,process.env.BIND||'0.0.0.0',()=>{
   log(AGORA.appId&&AGORA.cert?'声网 token 签发已启用（App ID '+AGORA.appId.slice(0,6)+'…）':'未配置声网证书 —— 网页将退回原生 WebRTC');
 });
 let key,cert;
-try{ key=fs.readFileSync(path.join(ROOT,'key.pem')); cert=fs.readFileSync(path.join(ROOT,'cert.pem')); }catch(e){}
+try{ key=fs.readFileSync(path.join(REPO,'key.pem')); cert=fs.readFileSync(path.join(REPO,'cert.pem')); }catch(e){}
 if(key&&cert){
   const httpsSrv=https.createServer({key,cert},serve);
   httpsSrv.on('upgrade',onUpgrade);
   httpsSrv.listen(HTTPS_PORT,'0.0.0.0',()=>{
     log('HTTPS 监听 '+HTTPS_PORT);
-    for(const ip of lanIPs()) log('  另一台电脑打开： https://'+ip+':'+HTTPS_PORT+'/?seat=white&room=home');
+    for(const ip of lanIPs()) log('  另一台电脑打开： https://'+ip+':'+HTTPS_PORT+'/app/');
   });
 }else{
   log('未找到 key.pem / cert.pem，只启了 HTTP —— 局域网上的另一台机器将无法使用摄像头');
