@@ -15,7 +15,7 @@ class CameraRig:
         self.sources = sources
 
     @classmethod
-    def open(cls, specs: dict[str, str], **kw) -> "CameraRig":
+    def open(cls, specs: dict[str, str], **kw) -> CameraRig:
         return cls({cid: FrameSource.open(spec, camera_id=cid, **kw) for cid, spec in specs.items()})
 
     @property

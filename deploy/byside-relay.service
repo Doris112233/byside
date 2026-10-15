@@ -1,0 +1,15 @@
+[Unit]
+Description=BySide 咫尺 中继
+After=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__ROOT__
+Environment=HTTP_PORT=8778
+Environment=BIND=__BIND__
+ExecStart=/usr/bin/node __ROOT__/relay/dist/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

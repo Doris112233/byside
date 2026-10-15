@@ -21,7 +21,7 @@ from byside_sensor.protocol import Message, constants
 from byside_sensor.scenes import SCENE_IDS, GomokuScene, OrigamiScene
 
 try:
-    from byside_sensor.calib.aruco import ProjectedMarkers      # 要 cv2.aruco（opencv ≥ 4.7 自带）
+    from byside_sensor.calib.aruco import ProjectedMarkers  # 要 cv2.aruco（opencv ≥ 4.7 自带）
 except Exception as _e:                                         # 没有就只剩手动拖四个角
     ProjectedMarkers = None
     print(f"[标定] 自动标定不可用：{_e}", flush=True)

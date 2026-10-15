@@ -1,0 +1,6 @@
+# 云服务器上的反向代理：自动申请 HTTPS 证书，WebSocket 原样转发。
+# scripts/server-setup.sh 会把 __DOMAIN__ 换成你的域名后写到 /etc/caddy/Caddyfile
+__DOMAIN__ {
+  encode gzip
+  reverse_proxy 127.0.0.1:8778
+}

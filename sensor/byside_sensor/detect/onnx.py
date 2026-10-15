@@ -75,7 +75,7 @@ class OnnxStoneDetector:
         out = self.sess.run(None, {self.inp: np.ascontiguousarray(x)})[0]
         dets = nms(parse_yolo(out, self.conf), self.iou)
         res = []
-        for cx, cy, w, h, c, conf in dets:
+        for cx, cy, _w, _h, c, conf in dets:
             stone = self.class_map.get(c)
             if stone is None:
                 continue
@@ -132,6 +132,8 @@ if __name__ == "__main__":
     clsb, _, _ = detections_to_grid(dets, bp, 15, cell, seat="black")
     assert clsb[0] == EMPTY and clsb[7 * 15 + 7] == BLACK
     # 输出解析：造一个 (1, 6, 8400) 的假输出
-    fake = np.zeros((1, 6, 8400), np.float32); fake[0, :, 10] = [320, 320, 30, 30, .1, .9]
-    p = parse_yolo(fake, .35); assert len(p) == 1 and p[0][4] == 1 and abs(p[0][5] - .9) < 1e-6
+    fake = np.zeros((1, 6, 8400), np.float32)
+    fake[0, :, 10] = [320, 320, 30, 30, .1, .9]
+    p = parse_yolo(fake, .35)
+    assert len(p) == 1 and p[0][4] == 1 and abs(p[0][5] - .9) < 1e-6
     print("detect_onnx 自测通过：格点映射、座位过滤、同格去重、YOLO 输出解析")

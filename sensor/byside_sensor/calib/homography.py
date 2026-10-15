@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
@@ -17,9 +17,11 @@ Backproject = Callable[[float, float], Point]
 def homography(src: Sequence[Sequence[float]], dst: Sequence[Sequence[float]]) -> list[float] | None:
     """由 4 组对应点求单应矩阵，返回 [h0..h7]（h8 固定为 1）。退化时返回 None。"""
     A, b = [], []
-    for (x, y), (u, v) in zip(src, dst):
-        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.append(u)
-        A.append([0, 0, 0, x, y, 1, -v * x, -v * y]); b.append(v)
+    for (x, y), (u, v) in zip(src, dst, strict=True):
+        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        b.append(u)
+        A.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        b.append(v)
     try:
         h = np.linalg.solve(np.array(A, float), np.array(b, float))
     except np.linalg.LinAlgError:

@@ -33,7 +33,7 @@ class FrameSource:
         self.camera_id = camera_id
 
     @staticmethod
-    def open(spec, loop=True, fps=None, width=960, color=False, camera_id: str = "cam0") -> "FrameSource":
+    def open(spec, loop=True, fps=None, width=960, color=False, camera_id: str = "cam0") -> FrameSource:
         """color=True 返回 BGR 彩色帧，否则返回灰度。"""
         s = str(spec)
         if s == "synth":

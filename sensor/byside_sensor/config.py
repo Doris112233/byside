@@ -76,7 +76,7 @@ class Calibration:
     offset: list[float] = field(default_factory=lambda: [0.0, 0.0])
 
     @classmethod
-    def load(cls, path: str = CFG_PATH) -> "Calibration":
+    def load(cls, path: str = CFG_PATH) -> Calibration:
         c = cls()
         try:
             with open(path, encoding="utf-8") as f:

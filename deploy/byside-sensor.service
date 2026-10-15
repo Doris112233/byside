@@ -1,0 +1,16 @@
+[Unit]
+Description=BySide 咫尺 识别端（摄像头 → 棋子坐标 → 中继）
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+EnvironmentFile=/etc/byside.conf
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=__ROOT__/sensor
+ExecStart=__ROOT__/sensor/.venv/bin/byside-sensor --source ${BYSIDE_SOURCE} --server ${BYSIDE_SERVER} --user ${BYSIDE_USER}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

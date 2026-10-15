@@ -11,7 +11,6 @@
 import argparse
 import json
 import os
-import sys
 import time
 
 from byside_sensor.capture.source import FrameSource
@@ -36,7 +35,8 @@ def main():
     for k in range(a.count):
         f = src.read()
         if f is None:
-            print(f"来源结束，共 {k} 帧"); break
+            print(f"来源结束，共 {k} 帧")
+            break
         name = f"{k:05d}.png"
         cv2.imwrite(os.path.join(a.out, name), f)
         meta["frames"].append({"file": name, "t": round(time.perf_counter() - t0, 4)})

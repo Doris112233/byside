@@ -9,6 +9,7 @@
 如果这三样都过得去，移植就是忠实的。
 """
 import math
+
 import numpy as np
 
 BLACK, WHITE, EMPTY = 1, 2, 0
@@ -96,7 +97,8 @@ def make_board(n=15, size=(960, 720), quad=None, stones=None,
 
 def _draw_line(img, p0, p1, gray, width):
     h, w = img.shape
-    x0, y0 = p0; x1, y1 = p1
+    x0, y0 = p0
+    x1, y1 = p1
     steps = int(max(abs(x1 - x0), abs(y1 - y0)) * 2) + 2
     r = width / 2.0
     for t in np.linspace(0, 1, steps):

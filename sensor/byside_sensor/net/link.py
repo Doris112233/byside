@@ -13,7 +13,7 @@ import ssl
 import threading
 import time
 import urllib.parse
-from typing import Callable
+from collections.abc import Callable
 
 import websocket
 
@@ -45,7 +45,7 @@ class NetLink:
         self._pending: list[Message] = []   # 断线期间攒下的必达消息
 
     # ---------- 对外 ----------
-    def start(self) -> "NetLink":
+    def start(self) -> NetLink:
         threading.Thread(target=self._loop, daemon=True, name="netlink").start()
         return self
 

@@ -1,7 +1,6 @@
 """流水线用合成帧跑一遍：标定 → 检测 → 跟踪 → 发 move；板端场景收 role / move / reset。"""
 import numpy as np
 
-from byside_sensor.calib.homography import grid_backproject
 from byside_sensor.capture import synth
 from byside_sensor.config import Calibration, SensorConfig
 from byside_sensor.detect import ClassicDetector

@@ -2,13 +2,13 @@
 # ============================================================
 #  咫尺 · 板子版（RDK X5）一次性配置。在板子上跑一次，之后插电开机全自动。
 #
-#  和电脑版是同一份代码，只是换了跑的地方：
-#    识别      systemd 服务 byside（python rdk/app.py --headless）
-#    桌面界面  桌面会话里自启的浏览器，投影模式全屏
-#    中继      云上的（--server），或者板子自己跑一个（--local-relay）
-#
 #  板子上用 rdk 分支（在板子上实测通过的稳定版；开发在 main，验过再 fast-forward 过来）：
 #    git clone -b rdk https://github.com/Doris112233/byside
+#
+#  装好之后：
+#    识别端   systemd 服务 byside（sensor/.venv/bin/byside-sensor）
+#    投影     桌面会话自启的浏览器，全屏打开 /app/?surface=table
+#    中继     云上的（--server），或者板子自己跑一个（--local-relay）
 #
 #  用法（在板子上）：
 #    scripts/rdk-setup.sh --name 奶奶 --server wss://你的域名/ws
@@ -19,13 +19,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CUR="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
 [ "$CUR" = rdk ] || echo "⚠️ 当前在分支「$CUR」，板子上建议用 rdk 分支（稳定版）：git checkout rdk"
+
 NAME=""; USER_CODE=""; SERVER=""; CAMERA="0"; LOCAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --name) NAME="$2"; shift 2;;  --user) USER_CODE="$2"; shift 2;;
     --server) SERVER="$2"; shift 2;;  --camera) CAMERA="$2"; shift 2;;
     --local-relay) LOCAL=1; shift;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0;;
     *) echo "不认识的参数：$1"; exit 1;;
   esac
 done
@@ -38,30 +39,26 @@ if [ -z "$USER_CODE" ] && [ -f "$ID_FILE" ]; then USER_CODE="$(cut -d' ' -f1 "$I
 USER_CODE="$(echo "$USER_CODE" | tr '[:lower:]' '[:upper:]')"
 echo "$USER_CODE $NAME" > "$ID_FILE"
 
+render(){ sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$USER#g" -e "s#__BIND__#${2:-0.0.0.0}#g" "$ROOT/deploy/$1"; }
+
+# ---------- Python 包 ----------
+echo "· 装识别端（opencv、numpy）…"
+[ -x "$ROOT/sensor/.venv/bin/python" ] || python3 -m venv "$ROOT/sensor/.venv"
+"$ROOT/sensor/.venv/bin/pip" install -q --upgrade pip
+"$ROOT/sensor/.venv/bin/pip" install -q -e "$ROOT/sensor"
+
 # ---------- 本地中继（可选） ----------
 if [ "$LOCAL" = 1 ]; then
-  command -v node >/dev/null || sudo apt-get install -y -q nodejs
-  sudo tee /etc/systemd/system/byside-relay.service >/dev/null <<EOF
-[Unit]
-Description=BySide 中继（板子本地；正式部署应放云上）
-After=network-online.target
-[Service]
-User=$USER
-WorkingDirectory=$ROOT
-Environment=HTTP_PORT=8778
-ExecStart=/usr/bin/node server.js
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
+  command -v node >/dev/null || sudo apt-get install -y -q nodejs npm
+  (cd "$ROOT" && npm ci --no-audit --no-fund && npm run build)
+  render byside-relay.service | sudo tee /etc/systemd/system/byside-relay.service >/dev/null
   sudo systemctl daemon-reload; sudo systemctl enable --now byside-relay
   SERVER="ws://127.0.0.1:8778/ws"; WEB="http://127.0.0.1:8778"
 else
   WEB="$(echo "$SERVER" | sed -e 's#^ws://#http://#' -e 's#^wss://#https://#' -e 's#/ws$##')"
 fi
 
-# ---------- 识别服务：无头，只做传感器 ----------
+# ---------- 识别服务 ----------
 sudo tee /etc/byside.conf >/dev/null <<EOF
 # 咫尺 · 板子配置。改完 sudo systemctl restart byside
 BYSIDE_SOURCE=$CAMERA
@@ -69,27 +66,11 @@ BYSIDE_SERVER=$SERVER
 BYSIDE_USER=$USER_CODE
 EOF
 sudo chmod 600 /etc/byside.conf
-sudo tee /etc/systemd/system/byside.service >/dev/null <<EOF
-[Unit]
-Description=BySide 咫尺 识别（摄像头 → 棋子坐标 → 中继）
-After=network-online.target
-[Service]
-Type=simple
-User=$USER
-EnvironmentFile=/etc/byside.conf
-Environment=PYTHONUNBUFFERED=1
-WorkingDirectory=$ROOT/rdk
-ExecStart=/usr/bin/python3 app.py --headless --source \${BYSIDE_SOURCE} --server \${BYSIDE_SERVER} --user \${BYSIDE_USER}
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
+render byside-sensor.service | sudo tee /etc/systemd/system/byside.service >/dev/null
 sudo systemctl daemon-reload; sudo systemctl enable --now byside
 
-# ---------- 桌面界面：登录桌面后自动开浏览器，投影模式全屏 ----------
-# ⚠️ 这一步没在 RDK 上实测过。Ubuntu 22.04 的 Chromium / Firefox 都是 snap 包，
-#    在 RDK 上能不能装、跑不跑得动视频通话，要开机实测。
+# ---------- 投影：登录桌面后自动开浏览器，全屏 ----------
+# ⚠️ 这一步没在 RDK 上实测过。Ubuntu 22.04 的 Chromium / Firefox 都是 snap 包，能不能跑要开机验证。
 B="$(command -v chromium-browser || command -v chromium || command -v google-chrome || command -v firefox || true)"
 URL="$WEB/app/?surface=table&user=$USER_CODE&name=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$NAME")"
 mkdir -p "$HOME/.config/autostart"
@@ -98,13 +79,7 @@ if [ -n "$B" ]; then
     *firefox*) CMD="$B --kiosk \"$URL\"";;
     *) CMD="$B --kiosk --noerrdialogs --disable-infobars --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream \"$URL\"";;
   esac
-  cat > "$HOME/.config/autostart/byside-table.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=咫尺 桌面界面
-Exec=sh -c 'sleep 6; $CMD'
-X-GNOME-Autostart-enabled=true
-EOF
+  sed -e "s#__CMD__#$CMD#" "$ROOT/deploy/byside-table.desktop" > "$HOME/.config/autostart/byside-table.desktop"
   echo "· 桌面界面会在登录后自动打开：$B"
 else
   echo "⚠️ 没找到浏览器。先试：sudo apt install -y chromium-browser（22.04 上是 snap，可能不行）"

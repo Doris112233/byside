@@ -93,7 +93,8 @@ def classify_abs_ref(gray, bp: Backproject, n: int, seat: str | None = None,
             for ox, oy in ring_pts:
                 x, y = int(round(cx + ox)), int(round(cy + oy))
                 if 0 <= x < pw and 0 <= y < ph:
-                    rp.append(x); rq.append(y)
+                    rp.append(x)
+                    rq.append(y)
             if len(rp) < 8:
                 continue
             board = med_js(gray[np.array(rq), np.array(rp)].astype(np.float32))

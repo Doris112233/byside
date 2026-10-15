@@ -53,7 +53,7 @@ class ProjectedMarkers:
         corners, ids, _ = self.det.detectMarkers(gray)
         out = {}
         if ids is not None:
-            for c, i in zip(corners, ids.flatten()):
+            for c, i in zip(corners, ids.flatten(), strict=True):
                 i = int(i)
                 if 0 <= i < 4:
                     out[i] = tuple(c[0].mean(axis=0).tolist())
