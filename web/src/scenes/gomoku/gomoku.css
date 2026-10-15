@@ -1,0 +1,8 @@
+#p-gomoku .board{height:100%;aspect-ratio:1;max-width:100%;border-radius:.6rem;display:block}
+.side{display:flex;flex-direction:column;gap:.5rem;align-items:stretch;min-width:7rem}
+.side .who{font-size:.8rem;color:var(--ink-dim);line-height:1.5}
+.side .who b{display:flex;align-items:center;gap:.4rem;color:var(--ink);font-size:.95rem;font-weight:500}
+.stone{width:.9rem;height:.9rem;border-radius:50%;display:inline-block;border:.05rem solid rgba(0,0,0,.4)}
+.stone.b{background:#222;border-color:#666}.stone.w{background:#f4f1ea}
+.sbtn{font-size:.8rem;padding:.5rem .8rem;border-radius:.7rem;background:var(--surface);border:.06rem solid var(--surface-line)}
+@media (max-aspect-ratio:1/1){ .side{flex-direction:row;flex-wrap:wrap;justify-content:center;min-width:0} #p-gomoku .board{height:auto;width:100%} }

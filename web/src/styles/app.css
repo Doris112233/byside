@@ -1,0 +1,208 @@
+/* 咫尺 · 桌面端。这一页有两种活法：
+     投影在桌上（?surface=table）—— 遥控器操作，十英尺界面，没有触屏
+     拿在手里（手机/平板）       —— 手指点
+   同一套页面、同一套焦点导航，只是投影时把会在桌上变成彩色光斑的东西关掉。 */
+
+/* 字号跟着屏幕走：投影 1920×1200 时约 31px，手机上不低于 17px */
+html{font-size:clamp(17px,2.6vmin,40px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+  line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden}
+h1,h2,h3{font-family:var(--font-display);margin:0;text-wrap:balance}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+input{font:inherit}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* 投影模式：纯黑底、不要环境光晕（投在木桌上会变成一团彩色光斑） */
+body.table{background:#000}
+body.table .ambient{display:none}
+
+.ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.glow{position:absolute;border-radius:50%;filter:blur(70px)}
+.glow-a{width:70vmax;height:70vmax;left:-20vmax;top:-30vmax;background:var(--lamp);opacity:.11}
+.glow-b{width:60vmax;height:60vmax;right:-25vmax;bottom:-20vmax;background:var(--indigo);opacity:.08}
+.vig-defs{position:absolute;width:0;height:0;overflow:hidden}
+
+/* ---------- 焦点：十英尺界面里最重要的一件事。遥控器用户必须一眼看出现在「在哪」 ---------- */
+[data-nav]{outline:none;transition:transform .16s cubic-bezier(.16,1,.3,1),box-shadow .16s,border-color .16s,background .16s}
+[data-nav]:focus-visible,[data-nav].focused{
+  box-shadow:0 0 0 .14rem var(--lamp),0 0 1.6rem .2rem rgba(240,178,90,.45)!important;
+  border-color:var(--lamp)!important;transform:scale(1.045);z-index:2}
+body.touch [data-nav]:focus-visible{transform:none}
+
+.screen{position:fixed;inset:0;z-index:1;display:none;flex-direction:column;align-items:center;
+  padding:max(1.2rem,env(safe-area-inset-top)) 1.4rem max(1.2rem,env(safe-area-inset-bottom))}
+.screen.on{display:flex}
+/* 入场只做位移，永远不从透明开始：板子 GPU 弱、动画一卡，从 opacity:0 起步的内容
+   就会卡在看不见 —— 老人看到的是一张黑桌子。 */
+@keyframes riseIn{from{transform:translateY(.6rem)}to{transform:none}}
+.screen.on>*{animation:riseIn .6s cubic-bezier(.16,1,.3,1) both}
+.screen.on>*:nth-child(2){animation-delay:.05s}.screen.on>*:nth-child(3){animation-delay:.1s}.screen.on>*:nth-child(4){animation-delay:.15s}
+
+/* 手绘描边 */
+.hand{fill:none;stroke:var(--amber);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.dw{stroke-dasharray:100;stroke-dashoffset:100;animation:dw 5.4s ease-in-out infinite}
+@keyframes dw{0%{stroke-dashoffset:100}26%,84%{stroke-dashoffset:0}100%{stroke-dashoffset:100}}
+.br{animation:br 3.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center bottom}
+@keyframes br{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-1.6px) scaleY(1.015)}}
+.stm{animation:stm 2.6s ease-out infinite}
+@keyframes stm{0%{opacity:0;transform:translateY(5px) scaleX(.85)}25%{opacity:.75}100%{opacity:0;transform:translateY(-16px) scaleX(1.15)}}
+.lampglow{animation:lamp 3.4s ease-in-out infinite}@keyframes lamp{0%,100%{opacity:.55}50%{opacity:.85}}
+
+/* ---------- 按钮 ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;font-size:1.05rem;font-weight:700;
+  padding:.7rem 1.6rem;border-radius:999px;background:var(--amber);color:#1a1510;min-height:2.6rem;
+  border:.08rem solid var(--amber);letter-spacing:.03em}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--surface-line)}
+.btn.wide{width:100%}
+
+/* ---------- 起名 ---------- */
+.setup{justify-content:center;gap:1.2rem;max-width:22rem;margin:0 auto}
+.setup .lampart{width:6rem;height:auto}
+.setup h1{font-size:2rem;font-weight:900;text-align:center;line-height:1.2}
+.setup h1 small{display:block;font-family:var(--font-body);font-weight:400;font-size:.8rem;color:var(--ink-dim);margin-top:.5rem}
+.field{width:100%}
+.field label{display:block;font-size:.72rem;color:var(--ink-dim);margin:0 0 .35rem .3rem}
+.field input{width:100%;font-size:1.25rem;padding:.6rem .9rem;border-radius:.8rem;color:var(--ink);
+  background:var(--surface);border:.08rem solid var(--surface-line);outline:none}
+.field input:focus{border-color:var(--lamp);background:var(--amber-soft)}
+.field input::placeholder{color:rgba(171,176,194,.4)}
+
+/* ---------- 家：找好友 ---------- */
+.home{justify-content:flex-start;gap:.8rem}
+.bar{width:100%;max-width:48rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.bar .me{font-size:.8rem;color:var(--ink-dim);margin-right:auto}.bar .me b{color:var(--ink);font-weight:500;font-size:.95rem}
+.pill{display:inline-flex;align-items:center;gap:.4rem;font-size:.7rem;padding:.3rem .7rem;border-radius:999px;
+  border:.06rem solid var(--surface-line);background:var(--surface);color:var(--ink-dim)}
+.pill b{font-family:var(--font-mono);color:var(--lamp);font-weight:600;letter-spacing:.12em;font-size:.8rem}
+.pill i{width:.45rem;height:.45rem;border-radius:50%;background:var(--ink-dim);opacity:.5}
+.pill.lit i{background:var(--ok);opacity:1;box-shadow:0 0 .5rem var(--ok)}
+.home h2{font-size:1.55rem;font-weight:900;margin:.4rem 0 .2rem;text-align:center}
+.friends{width:100%;max-width:48rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(9rem,1fr));gap:.8rem;
+  padding:.4rem;overflow-y:auto;overflow-x:hidden;flex:1;align-content:start}
+.fcard{position:relative;display:flex;flex-direction:column;align-items:center;gap:.45rem;padding:1rem .6rem .9rem;
+  border-radius:1rem;background:var(--surface);border:.08rem solid var(--surface-line);width:100%}
+.fcard .avatar{width:4.4rem;height:4.4rem}
+.fcard .nm{font-size:1.05rem;font-weight:700}
+.fcard .st{font-size:.68rem;color:var(--ink-dim);display:flex;align-items:center;gap:.35rem}
+.fcard .st i{width:.45rem;height:.45rem;border-radius:50%;background:var(--ink-dim);opacity:.5}
+.fcard.on{border-color:rgba(224,151,90,.5)}
+.fcard.on .st{color:var(--amber)}.fcard.on .st i{background:var(--amber);opacity:1;box-shadow:0 0 .5rem var(--lamp)}
+.fcard.busy .st{color:var(--indigo)}.fcard.busy .st i{background:var(--indigo);opacity:1}
+.fcard:not(.on):not(.add){opacity:.5}
+.fcard.add{border-style:dashed;justify-content:center;color:var(--ink-dim)}
+.fcard.add .plus{font-size:2.2rem;line-height:1;color:var(--amber);font-weight:300}
+.avatar{border-radius:50%;background:rgba(0,0,0,.2);border:.06rem solid var(--surface-line);display:grid;place-items:center;overflow:hidden}
+.avatar svg{width:84%;height:84%}
+.empty{grid-column:1/-1;color:var(--ink-dim);text-align:center;padding:1rem;font-size:.85rem;line-height:1.8}
+.empty b{color:var(--lamp);font-family:var(--font-mono);letter-spacing:.1em}
+
+/* ---------- 底部抽屉：选游戏 / 表情 / 加好友 ---------- */
+.veil{position:fixed;inset:0;z-index:10;background:rgba(10,11,15,.72);display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px)}
+body.table .veil{background:rgba(0,0,0,.86);backdrop-filter:none}
+.veil.on{display:flex}
+.sheet{width:min(100%,46rem);background:#1d2029;border:.08rem solid var(--surface-line);border-bottom:0;
+  border-radius:1.3rem 1.3rem 0 0;padding:1.2rem 1.3rem max(1.2rem,env(safe-area-inset-bottom));
+  animation:up .35s cubic-bezier(.16,1,.3,1)}
+body.table .sheet{background:#000;border-color:rgba(224,151,90,.35)}
+@keyframes up{from{transform:translateY(40%);opacity:0}to{transform:none;opacity:1}}
+.sheet h3{font-size:1.3rem;font-weight:900;margin-bottom:.9rem;display:flex;align-items:center;gap:.6rem}
+.sheet h3 .avatar{width:2.2rem;height:2.2rem}
+.games{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.gcard{display:flex;flex-direction:column;align-items:center;gap:.35rem;padding:1rem .5rem;border-radius:1rem;
+  background:var(--surface);border:.08rem solid var(--surface-line);text-align:center}
+.gcard svg{width:3.4rem;height:3.4rem}
+.gcard b{font-size:1.1rem}.gcard span{font-size:.66rem;color:var(--ink-dim);line-height:1.4}
+@media (max-width:520px){.games{grid-template-columns:1fr}.gcard{flex-direction:row;justify-content:flex-start;text-align:left;gap:.8rem;padding:.8rem 1rem}.gcard svg{width:2.6rem;height:2.6rem}}
+
+/* 加好友 */
+.addwrap{display:grid;grid-template-columns:1fr 1.25fr;gap:1.2rem;align-items:start}
+@media (max-width:640px){.addwrap{grid-template-columns:1fr}}
+.mycode{background:var(--surface);border:.08rem solid var(--surface-line);border-radius:1rem;padding:1rem;text-align:center}
+.mycode .lbl,.addwrap .lbl{font-size:.7rem;color:var(--ink-dim)}
+.addwrap>div>.lbl{margin:0 0 .5rem .2rem}
+.mycode .code{font-family:var(--font-mono);font-size:2.1rem;font-weight:600;letter-spacing:.2em;color:var(--lamp);margin:.3rem 0 .5rem;padding-left:.2em}
+.mycode p{font-size:.68rem;color:var(--ink-dim);line-height:1.6;margin:0 0 .7rem}
+.slots{display:flex;gap:.35rem;justify-content:center;margin-bottom:.7rem}
+.slots span{width:2.2rem;height:2.7rem;border-radius:.5rem;border:.08rem solid var(--surface-line);background:var(--surface);
+  display:grid;place-items:center;font-family:var(--font-mono);font-size:1.4rem;font-weight:600;color:var(--lamp)}
+.slots span.cur{border-color:var(--lamp);box-shadow:0 0 .8rem rgba(240,178,90,.35)}
+.keys{display:grid;grid-template-columns:repeat(8,1fr);gap:.28rem}
+.keys button{font-family:var(--font-mono);font-size:.95rem;font-weight:600;padding:.4rem 0;border-radius:.45rem;
+  background:var(--surface);border:.06rem solid var(--surface-line)}
+.keys button.wide2{grid-column:span 2;font-family:var(--font-body);font-size:.75rem}
+.keys button.go{background:var(--amber);color:#1a1510;border-color:var(--amber)}
+
+/* ---------- 邀请 ---------- */
+.ring{justify-content:center;gap:1.1rem;text-align:center}
+.ring .avatar{width:7rem;height:7rem}
+.ring h2{font-size:1.75rem;font-weight:900}
+.ring h2 small{display:block;font-family:var(--font-body);font-weight:400;font-size:.8rem;color:var(--ink-dim);margin-top:.4rem}
+.ring .gicon{width:3.2rem;height:3.2rem}
+.ring .row{display:flex;gap:.9rem;margin-top:.4rem}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,151,90,.45)}60%{box-shadow:0 0 0 1rem rgba(224,151,90,0)}}
+
+/* ---------- 会话 ---------- */
+/* 版式按「对面坐着一个人」来排：对方的画面在桌子远端，游戏在中间，菜单在手边。
+   投影时这条边界还有个硬要求 —— 视频窗不能落进棋盘识别区，
+   不然摄像头会把画面里对方的棋子当成自己桌上的。 */
+.session{padding:0;display:none;flex-direction:column;align-items:stretch}
+.session.on{display:flex}
+.far{flex:none;display:flex;justify-content:center;align-items:flex-start;gap:.8rem;padding:.8rem 1rem 0;position:relative;height:30vh}
+.remote{position:relative;height:100%;aspect-ratio:16/10;border-radius:1rem;overflow:hidden;background:#0c0d12;
+  border:.08rem solid rgba(224,151,90,.35)}
+/* 只管视频本身和声网注入的播放器 div */
+.remote video,.remote>div[id^="agora-video"]{position:absolute;inset:0;width:100%!important;height:100%!important;object-fit:cover}
+.remote .tag{position:absolute;left:.6rem;top:.5rem;z-index:3;font-size:.72rem;display:flex;align-items:center;gap:.4rem;
+  background:rgba(0,0,0,.6);padding:.2rem .6rem .2rem .3rem;border-radius:999px}
+.remote .tag .avatar{width:1.3rem;height:1.3rem}
+.remote .tag .t{font-family:var(--font-mono);color:var(--ink-dim);font-size:.62rem}
+.remote .novid{position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-dim);font-size:.7rem;z-index:1}
+/* 叠在对方画面上的东西：左下角一枚「在玩什么」的小标，和飘上去的表情。
+   不接指针事件 —— 它们只是看的。自己的小窗在右上角，所以小标放左下，手机上也不会被盖住。 */
+.remote .overlay{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.remote .badge{position:absolute;left:.6rem;bottom:.5rem;display:flex;align-items:center;gap:.35rem;font-size:.66rem;color:var(--ink);
+  background:rgba(0,0,0,.6);border:.06rem solid rgba(224,151,90,.4);padding:.2rem .6rem .2rem .35rem;border-radius:999px}
+.remote .badge:empty{display:none}
+.remote .badge svg{width:1.1rem;height:1.1rem}
+.remote .badge.hot{border-color:var(--lamp);color:var(--lamp)}
+.remote .fx{position:absolute;bottom:0;width:2.6rem;height:2.6rem;margin-left:-1.3rem;animation:fx 1.8s ease-out forwards;filter:drop-shadow(0 0 .5rem rgba(240,178,90,.5))}
+body.table .remote .fx{filter:none}
+@keyframes fx{0%{transform:translateY(0) scale(.5);opacity:0}12%{opacity:1;transform:translateY(-12%) scale(1.1)}100%{transform:translateY(-330%) scale(1);opacity:0}}
+/* 表情：手持端在视频旁边一列直接点；投影端没触屏，走 dock 里的「表情」按钮开抽屉 */
+.react{display:flex;flex-direction:column;justify-content:center;gap:.45rem;height:100%}
+.react button{width:2.4rem;height:2.4rem;border-radius:50%;background:var(--surface);border:.06rem solid var(--surface-line);display:grid;place-items:center;transition:transform .12s}
+.react button:active{transform:scale(1.15)}
+.react button svg{width:1.5rem;height:1.5rem}
+body.table .react{display:none}
+.self{position:absolute;right:1rem;top:.8rem;height:34%;aspect-ratio:4/3;border-radius:.6rem;overflow:hidden;background:#000;
+  border:.06rem solid var(--surface-line);z-index:3}
+.self video,.self>div[id^="agora-video"]{width:100%!important;height:100%!important;object-fit:cover}   /* 拍的是桌面，不镜像 */
+body.table .self{display:none}
+.mid{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:1rem;padding:.6rem 1rem}
+.gamepane{display:none;height:100%;align-items:center;justify-content:center;gap:1rem}
+.gamepane.on{display:flex}
+/* 手边的菜单 */
+.dock{flex:none;display:flex;justify-content:center;gap:1rem;padding:.4rem 1rem max(.9rem,env(safe-area-inset-bottom))}
+.dock button{display:flex;flex-direction:column;align-items:center;gap:.25rem;font-size:.72rem;padding:.35rem .5rem;border-radius:1rem;border:.08rem solid transparent}
+.dock .ico{width:3.2rem;height:3.2rem;border-radius:50%;background:var(--surface);border:.08rem solid var(--surface-line);display:grid;place-items:center}
+.dock .ico svg{width:2rem;height:2rem}
+.dock button.on .ico{background:var(--amber-soft);border-color:var(--amber)}
+.dock button.end .ico{background:rgba(224,112,90,.18);border-color:var(--warn)}
+.dock button.end .ico svg .hand{stroke:var(--warn)}
+@media (max-aspect-ratio:1/1){ .far{height:26vh} .remote{height:100%;aspect-ratio:auto;width:100%} .react{display:none} .mid{flex-direction:column} }
+
+/* ---------- 提示条 / 状态 ---------- */
+.keyhint{position:fixed;left:50%;bottom:max(.5rem,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;
+  font-size:.62rem;color:var(--ink-dim);white-space:nowrap;display:none;gap:1rem;letter-spacing:.02em}
+.keyhint kbd{font-family:var(--font-mono);font-size:.58rem;padding:.08rem .35rem;border-radius:.3rem;border:.05rem solid var(--surface-line);color:var(--ink);margin-right:.2rem}
+body.keys .keyhint{display:flex}
+body.keys .session .dock{padding-bottom:1.6rem}
+.netpill{position:fixed;right:.8rem;bottom:max(.6rem,env(safe-area-inset-bottom));z-index:6;font-family:var(--font-mono);font-size:.55rem;
+  color:var(--ink-dim);display:flex;gap:.35rem;align-items:center;opacity:.7}
+.netpill i{width:.4rem;height:.4rem;border-radius:50%;background:var(--warn)}.netpill.ok i{background:var(--ok)}
+.toast{position:fixed;left:50%;top:max(.8rem,env(safe-area-inset-top));transform:translate(-50%,-160%);z-index:30;
+  background:rgba(20,22,28,.95);border:.06rem solid var(--amber);color:var(--ink);padding:.5rem 1.1rem;border-radius:999px;
+  font-size:.8rem;transition:transform .35s cubic-bezier(.16,1,.3,1);max-width:90vw;text-align:center}
+.toast.on{transform:translate(-50%,0)}

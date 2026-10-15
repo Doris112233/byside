@@ -1,0 +1,2 @@
+.tea{display:flex;flex-direction:column;align-items:center;gap:.4rem;color:var(--ink-dim);font-size:.85rem}
+.tea svg{width:7rem;height:auto}

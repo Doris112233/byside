@@ -1,0 +1,12 @@
+/* 调色板和字体。视觉沿用展示站，而且它天生适合投影：
+   投影仪上「黑」= 不发光 = 露出木桌本色，「琥珀色描边」= 被照亮的线。 */
+:root{
+  --bg:#181A22; --ink:#F3EEE3; --ink-dim:#ABB0C2;
+  --line:rgba(243,238,227,.13); --surface:rgba(255,255,255,.045); --surface-line:rgba(255,255,255,.1);
+  --amber:#E0975A; --amber-soft:rgba(224,151,90,.15); --lamp:#F0B25A;
+  --indigo:#8CA2D6; --indigo-soft:rgba(140,162,214,.15);
+  --ok:#8FCFA8; --warn:#E0705A;
+  --font-display:"Noto Serif SC","Songti SC",serif;
+  --font-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"IBM Plex Mono",Menlo,monospace;
+}

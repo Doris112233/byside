@@ -1,0 +1,13 @@
+.paperwrap{display:flex;align-items:center;gap:.8rem;height:100%}
+.stepbtn{width:3rem;height:3rem;border-radius:50%;background:var(--surface);border:.08rem solid var(--surface-line);font-size:1.4rem;display:grid;place-items:center}
+.paper{position:relative;height:100%;aspect-ratio:4/3;border-radius:.8rem;background:rgba(0,0,0,.2);border:.08rem solid var(--surface-line);overflow:hidden}
+body.table .paper{background:transparent}
+.paper svg{position:absolute;inset:6%;width:88%;height:88%}
+.paper .cap{position:absolute;left:0;right:0;bottom:.5rem;text-align:center;font-size:.8rem;color:var(--ink);padding:0 .6rem}
+.paper .cap b{color:var(--lamp);font-family:var(--font-mono);margin-right:.4rem}
+.paper .cur{position:absolute;width:1.6rem;height:1.6rem;margin:-.8rem 0 0 -.8rem;border-radius:50%;border:.14rem solid var(--lamp);display:none;pointer-events:none}
+.paper.pointing .cur{display:block}
+.paper .pt{position:absolute;width:1.4rem;height:1.4rem;margin:-.7rem 0 0 -.7rem;border-radius:50%;background:var(--lamp);
+  box-shadow:0 0 0 .4rem rgba(240,178,90,.35),0 0 1.8rem var(--lamp);animation:pt 1.8s ease-out forwards;pointer-events:none}
+@keyframes pt{0%{transform:scale(.4);opacity:0}15%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:0}}
+@media (max-aspect-ratio:1/1){ .paper{height:auto;width:100%} }
